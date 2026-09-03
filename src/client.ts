@@ -41,6 +41,18 @@ export interface Options {
     fetch?: typeof globalThis.fetch;
 }
 
+/** Per-call overrides for a single lookup. Anything omitted falls back to the client's setting. */
+export interface LookupOptions {
+    /** Retry attempts for a transient failure. */
+    retries?: number;
+}
+
+/** Per-call overrides for one batch. Anything omitted falls back to the client's setting. */
+export interface BatchOptions extends LookupOptions {
+    /** Concurrent in-flight requests for THIS batch only. */
+    concurrency?: number;
+}
+
 /**
  * A client for the VPNDetection API.
  *
@@ -72,12 +84,25 @@ export class VPNDetection {
     }
 
     /**
+     * Whether an address is private, loopback, link-local, documentation,
+     * multicast or otherwise not routable, including the IPv6 equivalents and
+     * the 6to4 and Teredo ranges.
+     *
+     * These are the addresses `lookup` answers locally. Exposed here so the
+     * check is reachable from the client you already hold; the same function is
+     * also importable on its own.
+     */
+    isBogon(ip: string): boolean {
+        return isBogon(ip);
+    }
+
+    /**
      * Classify one address.
      *
      * A bogon is answered locally and never reaches the network. Everything
      * else is served, then cached for this instance.
      */
-    async lookup(ip: string): Promise<Result> {
+    async lookup(ip: string, options: LookupOptions = {}): Promise<Result> {
         if (isBogon(ip)) {
             return bogonResult(ip);
         }
@@ -85,7 +110,7 @@ export class VPNDetection {
         if (hit !== undefined) {
             return hit;
         }
-        const result = await withRetry(this.retries, async () => {
+        const result = await withRetry(options.retries ?? this.retries, async () => {
             const res = await lookupIp({ client: this.client, path: { ip: ip } });
             const body = unwrap<LookupResponse>(res);
             return toResult(body);
@@ -102,12 +127,19 @@ export class VPNDetection {
      * up. An address that fails carries its error as its value, so one bad
      * entry cannot lose the rest of the answers.
      */
-    async lookupBatch(ips: Iterable<string>): Promise<Map<string, Result | VPNDetectionError>> {
+    async lookupBatch(
+        ips: Iterable<string>, options: BatchOptions = {},
+    ): Promise<Map<string, Result | VPNDetectionError>> {
         const unique = [...new Set(ips)];
+        // A per-call concurrency gets its own limiter; without one the call
+        // would share the instance's budget and silently ignore the override.
+        const limit = options.concurrency === undefined
+            ? this.limit
+            : pLimit(options.concurrency);
         const out = new Map<string, Result | VPNDetectionError>();
-        await Promise.all(unique.map((ip) => this.limit(async () => {
+        await Promise.all(unique.map((ip) => limit(async () => {
             try {
-                out.set(ip, await this.lookup(ip));
+                out.set(ip, await this.lookup(ip, options));
             } catch (err) {
                 out.set(ip, asError(err));
             }
