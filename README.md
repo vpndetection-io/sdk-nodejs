@@ -42,8 +42,6 @@ console.log(result.isHosting);      // true
 console.log(result.hosting?.provider);
 ```
 
-Your plan decides which fields come back. `isVpn` is always present; every other flag is `undefined` when your plan does not include it, which is different from `false` (we checked, and no). Use `result.isHosting ?? false` if you only care whether the address is flagged.
-
 ### Batch lookup
 
 You can do batch lookups with a list, which parallelizes requests for you efficiently:
@@ -151,7 +149,7 @@ There are official VPNDetection client libraries available for many languages in
 
 ## About VPNDetection
 
-VPN Detection API: Accurate anonymity detection identifying VPNs, residential proxies, hosting servers, tor nodes, CDNs, relays and more.
+VPN Detection API: Accurate anonymity detection identifying VPNs, residential proxies, hosting servers, Tor nodes, CDNs, relays and more.
 
 [<img src="https://s3.vpndetection.io/vpndetection-public/brand/mark.svg" alt="VPNDetection" width="96"/>](https://vpndetection.io/)
 
