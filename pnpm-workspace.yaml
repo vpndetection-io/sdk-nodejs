@@ -1,0 +1,7 @@
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  # npm serves these without a `time` field in the abbreviated metadata document
+  # pnpm requests, so the cooldown cannot be evaluated and the install fails.
+  # Both arrive as transitives of the OpenAPI generator, which is dev-only.
+  - "open"
+  - "confbox"

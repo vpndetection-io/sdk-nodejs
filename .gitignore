@@ -1,0 +1,5 @@
+node_modules/
+dist/
+
+# Generated from spec/openapi.yaml by `pnpm run generate`.
+src/generated/

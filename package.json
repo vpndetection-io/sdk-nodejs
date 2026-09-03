@@ -1,0 +1,60 @@
+{
+    "name": "vpndetection",
+    "version": "1.0.0",
+    "description": "Official Node.js client library for the VPNDetection API. Detect VPNs, proxies, Tor, hosting and CDN addresses.",
+    "type": "module",
+    "packageManager": "pnpm@11.1.0",
+    "license": "MIT",
+    "homepage": "https://vpndetection.io",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/vpndetection-io/sdk-nodejs.git"
+    },
+    "bugs": {
+        "url": "https://github.com/vpndetection-io/sdk-nodejs/issues"
+    },
+    "keywords": [
+        "vpn",
+        "vpn-detection",
+        "proxy-detection",
+        "tor",
+        "ip-intelligence",
+        "ip-geolocation",
+        "fraud-prevention",
+        "residential-proxy",
+        "hosting",
+        "cdn"
+    ],
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "engines": {
+        "node": ">=20"
+    },
+    "dependencies": {
+        "lru-cache": "^11.0.2",
+        "p-limit": "^6.2.0",
+        "p-retry": "^8.0.0"
+    },
+    "devDependencies": {
+        "@hey-api/openapi-ts": "^0.99.0",
+        "@types/node": "^26.2.0",
+        "typescript": "^5.9.3"
+    },
+    "scripts": {
+        "build": "rm -rf dist && openapi-ts && tsc",
+        "test": "pnpm run build && node --test test/*.test.mjs",
+        "prepublishOnly": "pnpm run build",
+        "generate": "openapi-ts"
+    }
+}
