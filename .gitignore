@@ -3,3 +3,6 @@ dist/
 
 # Generated from spec/openapi.yaml by `pnpm run generate`.
 src/generated/
+
+# pnpm store, if a container run ever lands one here.
+.pnpm-store/
