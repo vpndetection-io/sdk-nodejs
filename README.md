@@ -15,7 +15,7 @@ datacenter and mobile proxy pools.
 npm install vpndetection
 ```
 
-Requires Node.js 20 or newer. TypeScript types are included.
+Requires Node.js 22 or newer (Node 20 reached end of life on 2026-04-30). TypeScript types are included.
 
 ## Usage
 
