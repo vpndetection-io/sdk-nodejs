@@ -1,6 +1,6 @@
 {
     "name": "vpndetection",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Official Node.js client library for the VPNDetection API. Detect VPNs, proxies, Tor, hosting and CDN IPs.",
     "type": "module",
     "packageManager": "pnpm@11.1.0",
@@ -34,7 +34,8 @@
         ".": {
             "types": "./dist/index.d.ts",
             "default": "./dist/index.js"
-        }
+        },
+        "./package.json": "./package.json"
     },
     "files": [
         "dist",
