@@ -57,6 +57,12 @@ export function errorFromResponse(
     if (status === 403) {
         return new VPNDetectionError('forbidden', message, status);
     }
+    // Any other 4xx is a CLIENT error. Falling through to the server_error
+    // default would make it retryable, so a bad dataset id would be retried
+    // twice before failing. Only 5xx and transport failures are worth a retry.
+    if (status < 500) {
+        return new VPNDetectionError('bad_request', message, status);
+    }
     return new VPNDetectionError('server_error', message, status);
 }
 
