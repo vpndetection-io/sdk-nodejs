@@ -9,11 +9,16 @@ import {
     listDownloads, lookupIp,
 } from './generated/sdk.gen.js';
 import type {
-    DatasetMetadata, Download, LicensedDataset, LookupResponse,
+    DatabaseChecksumResponses, DatabaseMetadataResponses, DatasetMetadata, Download,
+    LicensedDataset, ListDatabasesResponses, ListDownloadsResponses, LookupResponse,
 } from './generated/types.gen.js';
+
 import { bogonResult, isBogon } from './bogon.js';
 import { errorFromResponse, VPNDetectionError } from './errors.js';
 import { toResult, type Result } from './types.js';
+
+/** The digests published alongside a dataset file. Which ones are present varies by dataset. */
+export type DatasetChecksums = DatabaseChecksumResponses[200]['checksums'];
 
 export const DEFAULT_BASE_URL = 'https://api.vpndetection.io';
 
@@ -157,30 +162,37 @@ export class DatabaseApi {
     async list(): Promise<LicensedDataset[]> {
         return withRetry(this.retries, async () => {
             const res = await listDatabases({ client: this.client });
-            return unwrap<{ datasets: LicensedDataset[] }>(res).datasets;
+            return unwrap<ListDatabasesResponses[200]>(res).datasets;
         });
     }
 
     async metadata(id: string): Promise<DatasetMetadata> {
         return withRetry(this.retries, async () => {
             const res = await databaseMetadata({ client: this.client, query: { id: id } });
-            return unwrap<DatasetMetadata>(res);
+            return unwrap<DatabaseMetadataResponses[200]>(res);
         });
     }
 
-    async checksum(id: string, format: 'csvgz' | 'mmdb'): Promise<string> {
+    /**
+     * The digests for one dataset file.
+     *
+     * Returns the whole set rather than one algorithm: which digests a dataset
+     * publishes is the API's choice, not ours, and picking one here is how the
+     * previous version came to return `undefined`.
+     */
+    async checksums(id: string, format: 'csvgz' | 'mmdb'): Promise<DatasetChecksums> {
         return withRetry(this.retries, async () => {
             const res = await databaseChecksum({
                 client: this.client, query: { id: id, format: format },
             });
-            return unwrap<{ sha256: string }>(res).sha256;
+            return unwrap<DatabaseChecksumResponses[200]>(res).checksums;
         });
     }
 
     async downloads(): Promise<Download[]> {
         return withRetry(this.retries, async () => {
             const res = await listDownloads({ client: this.client });
-            return unwrap<{ downloads: Download[] }>(res).downloads;
+            return unwrap<ListDownloadsResponses[200]>(res).downloads;
         });
     }
 

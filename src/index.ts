@@ -1,5 +1,5 @@
 export { VPNDetection, DatabaseApi, DEFAULT_BASE_URL } from './client.js';
-export type { Options, CacheOptions, LookupOptions, BatchOptions } from './client.js';
+export type { Options, CacheOptions, LookupOptions, BatchOptions, DatasetChecksums } from './client.js';
 export { isBogon } from './bogon.js';
 export { VPNDetectionError } from './errors.js';
 export type { ErrorKind } from './errors.js';

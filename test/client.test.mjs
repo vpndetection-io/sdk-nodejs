@@ -84,3 +84,35 @@ test('retries are configurable per call', async () => {
     // 1 initial attempt plus 2 retries, rather than the instance's 0.
     assert.equal(calls, 3);
 });
+
+// The database responses nest their payload, and a hand-written unwrap shape is
+// a claim the compiler cannot check. `checksums` shipped broken in 1.0.x for
+// exactly that reason: it read a top-level `sha256` that is not there, and
+// returned undefined against a perfectly healthy API.
+test('database responses are unwrapped at the right depth', async () => {
+    const routes = {
+        '/api/v1/database/checksum': {
+            id: 'vpn_ip_extended_v1',
+            format: 'mmdb',
+            checksums: { md5: 'm', sha1: 's1', sha256: 's256', sha512: 's512' },
+        },
+        '/api/v1/database/list': { datasets: [{ id: 'vpn_ip_extended_v1' }] },
+        '/api/v1/database/downloads': { downloads: [{ id: 'vpn_ip_extended_v1' }] },
+        '/api/v1/database/metadata': { id: 'vpn_ip_extended_v1', columns: [] },
+    };
+    const fetchFn = async (input) => {
+        const url = new URL(typeof input === 'string' ? input : input.url);
+        return new Response(JSON.stringify(routes[url.pathname]), {
+            status: 200, headers: { 'content-type': 'application/json' },
+        });
+    };
+    const client = new VPNDetection({ fetch: fetchFn, apiKey: 'k' });
+
+    const sums = await client.database.checksums('vpn_ip_extended_v1', 'mmdb');
+    assert.deepEqual(sums, { md5: 'm', sha1: 's1', sha256: 's256', sha512: 's512' });
+    assert.equal(sums.sha256, 's256', 'the digest a caller actually wants must not be undefined');
+
+    assert.deepEqual(await client.database.list(), [{ id: 'vpn_ip_extended_v1' }]);
+    assert.deepEqual(await client.database.downloads(), [{ id: 'vpn_ip_extended_v1' }]);
+    assert.equal((await client.database.metadata('vpn_ip_extended_v1')).id, 'vpn_ip_extended_v1');
+});
