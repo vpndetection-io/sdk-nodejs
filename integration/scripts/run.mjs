@@ -44,7 +44,9 @@ function main() {
     }
     console.log(`==> ${PACKAGE}@${range} matches published ${versions.join(', ')}`);
 
-    if (process.env.VPNDETECTION_STAGING_KEY === undefined) {
+    // Empty, not just unset: Actions interpolates a secret that does not exist
+    // to an empty string, and an empty key is sent as no key at all.
+    if ((process.env.VPNDETECTION_STAGING_KEY ?? '').trim() === '') {
         notice('VPNDETECTION_STAGING_KEY is not set: running the keyless tests only');
     }
 

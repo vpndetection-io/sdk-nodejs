@@ -13,8 +13,12 @@ import { test } from 'node:test';
 import { VPNDetection, isBogon } from 'vpndetection';
 
 const STAGING = 'https://api-staging.vpndetection.io';
-const KEY = process.env.VPNDETECTION_STAGING_KEY;
-const KEYLESS_ONLY = KEY === undefined
+// Trimmed, and EMPTY counts as absent. Actions interpolates a secret that does
+// not exist to an empty string rather than leaving the variable unset, and an
+// empty key makes the client send no auth header at all, so a `=== undefined`
+// gate lets the keyed test run as a second keyless one and pass against nothing.
+const KEY = (process.env.VPNDETECTION_STAGING_KEY ?? '').trim();
+const KEYLESS_ONLY = KEY === ''
     ? 'VPNDETECTION_STAGING_KEY is not set, so the keyed half of the suite cannot run'
     : false;
 
@@ -103,12 +107,23 @@ test('a batch collapses duplicates and keeps bogons off the wire', async () => {
 });
 
 test('a keyed answer is a superset of the keyless one', { skip: KEYLESS_ONLY }, async () => {
-    const keyed = new VPNDetection({ baseUrl: STAGING, apiKey: KEY });
+    let carriedTheKey = false;
+    const keyed = new VPNDetection({
+        baseUrl: STAGING,
+        apiKey: KEY,
+        fetch: (...args) => {
+            carriedTheKey ||= sends(args[0], KEY);
+            return fetch(...args);
+        },
+    });
 
     const withKey = await keyed.lookup(PROBE);
     // Served in the first test and cached since, so this costs no request.
     const without = await keyless.lookup(PROBE);
 
+    // Without this the comparison is vacuous: a key the client quietly drops
+    // produces a second keyless answer, which is a superset of itself.
+    assert.ok(carriedTheKey, 'the key never reached the wire');
     assertTierIndependentShape(withKey);
     assert.equal(withKey.ip, without.ip);
     assert.equal(withKey.isVpn, without.isVpn, 'the base verdict cannot depend on the key');
@@ -123,6 +138,13 @@ test('a keyed answer is a superset of the keyless one', { skip: KEYLESS_ONLY }, 
         `keyed answered ${keyedFields.length} fields, keyless ${keylessFields.length}`,
     );
 });
+
+function sends(input, key) {
+    if (typeof input === 'string') {
+        return input.includes(key);
+    }
+    return input.url.includes(key) || [...input.headers.values()].some((v) => v.includes(key));
+}
 
 // Holds on every plan: presence is the plan, the value is the answer.
 function assertTierIndependentShape(r) {
