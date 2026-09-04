@@ -8,7 +8,7 @@ import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { createClient, createConfig } from './generated/client/index.js';
 import type { Client } from './generated/client/index.js';
 import {
-    databaseChecksum, databaseMetadata, downloadDatabase as downloadDatabaseRedirect,
+    databaseChecksum, databaseMetadata, downloadDatabase as downloadRedirect,
     listDatabases, listDownloads, lookupIp,
 } from './generated/sdk.gen.js';
 import type {
@@ -27,8 +27,8 @@ export type DatasetChecksums = DatabaseChecksumResponses[200]['checksums'];
 export type DatasetFormat = 'csvgz' | 'mmdb';
 
 /**
- * Where `downloadDatabase` puts the bytes: a path to write, or a stream you
- * opened yourself and will close yourself.
+ * Where `download` puts the bytes: a path to write, or a stream you opened
+ * yourself and will close yourself.
  */
 export type DownloadDestination = string | Writable;
 
@@ -226,7 +226,7 @@ export class DatabaseApi {
      */
     async downloadUrl(id: string, format: DatasetFormat): Promise<string> {
         return withRetry(this.retries, async () => {
-            const res = await downloadDatabaseRedirect({
+            const res = await downloadRedirect({
                 client: this.client,
                 query: { id: id, format: format },
                 redirect: 'manual',
@@ -261,7 +261,7 @@ export class DatabaseApi {
      * than a `VPNDetectionError`: a reset socket and a full disk are different
      * problems and only one of them is ours.
      */
-    async downloadDatabase(
+    async download(
         id: string, format: DatasetFormat, destination: DownloadDestination,
     ): Promise<number> {
         const res = await this.fetchDatasetFile(id, format);
@@ -310,9 +310,9 @@ export class DatabaseApi {
      * `resproxy_ip_90d_v1` 1.79 GB of csv.gz, which will cost you that much
      * resident memory in one allocation and can fail outright. Reach for this
      * at the small end, where the bytes are going straight into a parser; use
-     * `downloadDatabase` for anything you have not measured.
+     * `download` for anything you have not measured.
      */
-    async downloadDatabaseBytes(id: string, format: DatasetFormat): Promise<Uint8Array> {
+    async downloadBytes(id: string, format: DatasetFormat): Promise<Uint8Array> {
         const res = await this.fetchDatasetFile(id, format);
         return new Uint8Array(await res.arrayBuffer());
     }

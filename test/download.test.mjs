@@ -88,19 +88,19 @@ test('downloadUrl returns the Location and does not follow it', async (t) => {
     assert.deepEqual(o.seen.map((r) => r.path), ['/api/v1/database/download']);
 });
 
-test('downloadDatabase follows the 302 and writes the file', async (t) => {
+test('download follows the 302 and writes the file', async (t) => {
     const o = await start();
     t.after(() => o.server.close());
     const dest = join(tmp, 'cdn_ip_v1.csv.gz');
 
-    const bytes = await o.client.database.downloadDatabase('cdn_ip_v1', 'csvgz', dest);
+    const bytes = await o.client.database.download('cdn_ip_v1', 'csvgz', dest);
 
     assert.equal(bytes, SMALL.length);
     assert.deepEqual(readFileSync(dest), SMALL);
     assert.deepEqual(o.seen.map((r) => r.path), ['/api/v1/database/download', '/blob']);
 });
 
-test('downloadDatabase accepts a writable stream', async (t) => {
+test('download accepts a writable stream', async (t) => {
     const o = await start();
     t.after(() => o.server.close());
     const got = [];
@@ -111,17 +111,17 @@ test('downloadDatabase accepts a writable stream', async (t) => {
         },
     });
 
-    const bytes = await o.client.database.downloadDatabase('cdn_ip_v1', 'csvgz', sink);
+    const bytes = await o.client.database.download('cdn_ip_v1', 'csvgz', sink);
 
     assert.equal(bytes, SMALL.length);
     assert.deepEqual(Buffer.concat(got), SMALL);
 });
 
-test('downloadDatabaseBytes returns the bytes', async (t) => {
+test('downloadBytes returns the bytes', async (t) => {
     const o = await start();
     t.after(() => o.server.close());
 
-    const bytes = await o.client.database.downloadDatabaseBytes('cdn_ip_v1', 'csvgz');
+    const bytes = await o.client.database.downloadBytes('cdn_ip_v1', 'csvgz');
 
     assert.ok(bytes instanceof Uint8Array);
     assert.deepEqual(Buffer.from(bytes), SMALL);
@@ -134,7 +134,7 @@ test('the API key reaches the API and never object storage', async (t) => {
     const o = await start();
     t.after(() => o.server.close());
 
-    await o.client.database.downloadDatabase('cdn_ip_v1', 'csvgz', join(tmp, 'keys.csv.gz'));
+    await o.client.database.download('cdn_ip_v1', 'csvgz', join(tmp, 'keys.csv.gz'));
 
     const api = o.seen.find((r) => r.path === '/api/v1/database/download');
     const storage = o.seen.find((r) => r.path === '/blob');
@@ -162,7 +162,7 @@ test('a large body is streamed, not buffered', async (t) => {
     });
 
     const before = process.memoryUsage().rss;
-    const bytes = await o.client.database.downloadDatabase('vpn_ip_extended_v1', 'mmdb', sink);
+    const bytes = await o.client.database.download('vpn_ip_extended_v1', 'mmdb', sink);
     const grewMib = (process.memoryUsage().rss - before) / (1024 * 1024);
 
     assert.equal(bytes, SIZE, 'the whole body must have been transferred');
@@ -175,7 +175,7 @@ test('object storage refusing the link is not reported as a lookup failure', asy
     const client = new VPNDetection({ baseUrl: o.baseUrl, apiKey: 'k', retries: 0 });
 
     await assert.rejects(
-        () => client.database.downloadDatabaseBytes('cdn_ip_v1', 'csvgz'),
+        () => client.database.downloadBytes('cdn_ip_v1', 'csvgz'),
         (err) => {
             assert.ok(err instanceof VPNDetectionError);
             assert.equal(err.kind, 'forbidden');
@@ -195,7 +195,7 @@ test('a transfer that dies part way leaves nothing at the destination', async (t
     const client = new VPNDetection({ baseUrl: o.baseUrl, apiKey: 'k', retries: 0 });
     const dest = join(tmp, 'half-a-dataset.csv.gz');
 
-    await assert.rejects(() => client.database.downloadDatabase('cdn_ip_v1', 'csvgz', dest));
+    await assert.rejects(() => client.database.download('cdn_ip_v1', 'csvgz', dest));
     assert.throws(() => readFileSync(dest), { code: 'ENOENT' });
     assert.throws(() => readFileSync(`${dest}.part`), { code: 'ENOENT' });
 });
