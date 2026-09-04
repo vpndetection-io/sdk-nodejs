@@ -56,18 +56,33 @@ test('the licensed catalogue answers the schema the client was generated from', 
         // "expected string" costs a whole CI cycle to interpret.
         const served = [...new Set(datasets.flatMap((d) => Object.keys(d)))].sort();
         assert.ok(
-            served.includes('id') && served.includes('formats'),
-            `the payload carries ${served.join(', ')}, and LicensedDataset declares id and formats`,
+            served.includes('base') && served.includes('versions'),
+            `the payload carries ${served.join(', ')}, and LicensedDataset declares base and versions`,
+        );
+        assert.ok(
+            !served.includes('docsGroup'),
+            'docsGroup is a docs-site slug and must not be published as API surface',
         );
         for (const d of datasets) {
-            assert.equal(typeof d.id, 'string');
+            assert.equal(typeof d.base, 'string');
             assert.equal(typeof d.name, 'string');
             assert.equal(typeof d.in_term, 'boolean');
-            assert.ok(Array.isArray(d.formats), `${d.id} carries no formats`);
+            assert.ok(['expired', 'licensed', 'unlicensed'].includes(d.standing),
+                `${d.base} carries an undocumented standing`);
             const rights = ['evaluation', 'internal', 'redistribute'];
-            assert.ok(rights.includes(d.redistribution), `${d.id} carries an undocumented right`);
+            assert.ok(rights.includes(d.redistribution), `${d.base} carries an undocumented right`);
+            // The point of the family shape: a license covers the family, and
+            // these are the ids the download and checksum methods take. Before
+            // the spec was corrected this list did not exist, so list() could
+            // not tell a caller what to download.
+            assert.ok(Array.isArray(d.versions) && d.versions.length > 0,
+                `${d.base} carries no versions`);
+            for (const v of d.versions) {
+                assert.equal(typeof v.id, 'string', `${d.base} has a version with no id`);
+                assert.ok(Array.isArray(v.formats), `${v.id} carries no formats`);
+            }
         }
-        console.log(`licensed: ${datasets.map((d) => d.id).join(', ')}`);
+        console.log(`licensed: ${datasets.flatMap((d) => d.versions.map((v) => v.id)).join(', ')}`);
     });
 
 test('a dataset the organization does not license is refused cleanly', { skip: NO_KEY }, async () => {
