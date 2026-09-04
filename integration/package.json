@@ -1,0 +1,18 @@
+{
+    "name": "vpndetection-integration",
+    "version": "0.0.0",
+    "private": true,
+    "description": "Exercises the PUBLISHED vpndetection package against the staging API.",
+    "type": "module",
+    "license": "MIT",
+    "engines": {
+        "node": ">=22"
+    },
+    "dependencies": {
+        "vpndetection": "^1.0.0"
+    },
+    "scripts": {
+        "test": "node --test test/*.test.mjs",
+        "integration": "node scripts/run.mjs"
+    }
+}
