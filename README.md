@@ -152,6 +152,15 @@ const bytes = await client.database.downloadBytes('cdn_ip_v1', 'csvgz');
 
 `downloadBytes` holds the whole file in memory, and the catalog runs from `cdn_ip_v1` at 10 KB to `resproxy_ip_90d_v1` at 1.79 GB, so use `download` for anything you have not measured.
 
+### Absent is not false
+
+Only `ip` and `isVpn` come back on every plan. A field your plan does not include is `undefined`, which means "not in your plan" rather than "checked, and no".
+
+```js
+result.isHosting ?? false        // when you only want the flag
+result.isHosting === undefined   // not in your plan
+```
+
 ## Other Libraries
 
 There are official VPNDetection client libraries available for many languages including PHP, Python, Go, Java, Ruby, and many popular frameworks such as Django, Rails, and Laravel. See our GitHub at https://github.com/vpndetection-io for more.
