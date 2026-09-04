@@ -134,14 +134,40 @@ Note that `rate_limited` and `quota_exceeded` both arrive as HTTP 429 and are no
 
 ### Database downloads
 
-If your key carries the `db.download` scope, the licensed datasets are available through `client.database`:
+If your key carries the `db.download` scope, the licensed datasets are available through `client.database`.
+
+`downloadDatabase` fetches one to a path, streaming it straight to disk so that nothing bigger than a chunk is ever held in memory:
 
 ```js
 const datasets = await client.database.list();
+
+const written = await client.database.downloadDatabase('vpn_ip_extended_v1', 'mmdb', './vpn_ip_extended_v1.mmdb');
+console.log(`${written} bytes`);
+```
+
+The bytes land in a neighboring `.part` file that is renamed once the transfer completes, so an interrupted download never leaves a truncated file behind that reads as a whole dataset. Pass a writable stream instead of a path when you want to do something else with them; a stream you opened stays yours to close:
+
+```js
+import { createWriteStream } from 'node:fs';
+
+await client.database.downloadDatabase('cdn_ip_v1', 'csvgz', createWriteStream('./cdn_ip_v1.csv.gz'));
+```
+
+`downloadDatabaseBytes` hands you the file as a `Uint8Array` instead:
+
+```js
+const bytes = await client.database.downloadDatabaseBytes('cdn_ip_v1', 'csvgz');
+```
+
+**Reach for that one only at the small end of the catalog**, because it holds the entire file in memory at once and the datasets span five orders of magnitude. `cdn_ip_v1` is 10 KB and `relay_ip_v1` is 78 KB, which are nothing and are convenient to feed straight to a parser. `vpn_ip_extended_v1` is a 628 MB mmdb and `resproxy_ip_90d_v1` is 1.79 GB of csv.gz, which will cost you that much resident memory in a single allocation and can fail outright. Use `downloadDatabase` for anything you have not measured.
+
+If you would rather run the transfer yourself, `downloadUrl` gives you the time-limited link and follows nothing:
+
+```js
 const url = await client.database.downloadUrl('vpn_ip_extended_v1', 'mmdb');
 ```
 
-`downloadUrl` returns a time-limited link rather than the bytes, so you choose how to transfer a file that can run to gigabytes.
+The link authorizes the start of a transfer, so one already running is not interrupted when it lapses.
 
 ## Other Libraries
 

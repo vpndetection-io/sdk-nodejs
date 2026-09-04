@@ -2,11 +2,14 @@ import { LRUCache } from 'lru-cache';
 import pLimit from 'p-limit';
 import pRetry from 'p-retry';
 
+import type { Writable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
+
 import { createClient, createConfig } from './generated/client/index.js';
 import type { Client } from './generated/client/index.js';
 import {
-    databaseChecksum, databaseMetadata, downloadDatabase, listDatabases,
-    listDownloads, lookupIp,
+    databaseChecksum, databaseMetadata, downloadDatabase as downloadDatabaseRedirect,
+    listDatabases, listDownloads, lookupIp,
 } from './generated/sdk.gen.js';
 import type {
     DatabaseChecksumResponses, DatabaseMetadataResponses, DatasetMetadata, Download,
@@ -19,6 +22,15 @@ import { toResult, type Result } from './types.js';
 
 /** The digests published alongside a dataset file. Which ones are present varies by dataset. */
 export type DatasetChecksums = DatabaseChecksumResponses[200]['checksums'];
+
+/** The formats a dataset is published in. Not every dataset is built in both. */
+export type DatasetFormat = 'csvgz' | 'mmdb';
+
+/**
+ * Where `downloadDatabase` puts the bytes: a path to write, or a stream you
+ * opened yourself and will close yourself.
+ */
+export type DownloadDestination = string | Writable;
 
 export const DEFAULT_BASE_URL = 'https://api.vpndetection.io';
 
@@ -74,10 +86,14 @@ export class VPNDetection {
     readonly database: DatabaseApi;
 
     constructor(options: Options = {}) {
+        // Resolved once, because the download path calls object storage
+        // directly rather than through the generated client and has to reach
+        // the same implementation a test substituted.
+        const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
         this.client = createClient(createConfig({
             baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
             ...(options.apiKey === undefined ? {} : { auth: () => options.apiKey }),
-            ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+            fetch: fetchImpl,
         }));
         this.cache = options.cache === false ? null : new LRUCache<string, Result>({
             max: options.cache?.max ?? 10_000,
@@ -85,7 +101,7 @@ export class VPNDetection {
         });
         this.limit = pLimit(options.concurrency ?? 8);
         this.retries = options.retries ?? 2;
-        this.database = new DatabaseApi(this.client, this.retries);
+        this.database = new DatabaseApi(this.client, this.retries, fetchImpl);
     }
 
     /**
@@ -157,7 +173,11 @@ export class VPNDetection {
 
 /** The licensed dataset downloads. Access is granted by contract, not self-serve. */
 export class DatabaseApi {
-    constructor(private readonly client: Client, private readonly retries: number) {}
+    constructor(
+        private readonly client: Client,
+        private readonly retries: number,
+        private readonly fetchImpl: typeof globalThis.fetch,
+    ) {}
 
     async list(): Promise<LicensedDataset[]> {
         return withRetry(this.retries, async () => {
@@ -180,7 +200,7 @@ export class DatabaseApi {
      * publishes is the API's choice, not ours, and picking one here is how the
      * previous version came to return `undefined`.
      */
-    async checksums(id: string, format: 'csvgz' | 'mmdb'): Promise<DatasetChecksums> {
+    async checksums(id: string, format: DatasetFormat): Promise<DatasetChecksums> {
         return withRetry(this.retries, async () => {
             const res = await databaseChecksum({
                 client: this.client, query: { id: id, format: format },
@@ -204,9 +224,9 @@ export class DatabaseApi {
      * runs to gigabytes; the link authorizes the START of a transfer, so one
      * already running is not interrupted when it lapses.
      */
-    async downloadUrl(id: string, format: 'csvgz' | 'mmdb'): Promise<string> {
+    async downloadUrl(id: string, format: DatasetFormat): Promise<string> {
         return withRetry(this.retries, async () => {
-            const res = await downloadDatabase({
+            const res = await downloadDatabaseRedirect({
                 client: this.client,
                 query: { id: id, format: format },
                 redirect: 'manual',
@@ -222,6 +242,97 @@ export class DatabaseApi {
             throw new VPNDetectionError(
                 'server_error', 'expected a redirect to object storage', res.response.status,
             );
+        });
+    }
+
+    /**
+     * Download one dataset file, streaming it to `destination`.
+     *
+     * `destination` is either a path or a writable stream you opened yourself.
+     * A path is written through a neighboring `.part` file and renamed on
+     * completion, so a transfer that dies half way leaves no truncated file
+     * that reads as a whole dataset; a stream you pass is written as-is and
+     * stays yours to close. Nothing is ever held in memory beyond a single
+     * chunk, whatever the dataset weighs.
+     *
+     * Returns the number of bytes written.
+     *
+     * A failure DURING the transfer surfaces as the underlying error rather
+     * than a `VPNDetectionError`: a reset socket and a full disk are different
+     * problems and only one of them is ours.
+     */
+    async downloadDatabase(
+        id: string, format: DatasetFormat, destination: DownloadDestination,
+    ): Promise<number> {
+        const res = await this.fetchDatasetFile(id, format);
+        if (res.body === null) {
+            throw new VPNDetectionError(
+                'server_error', 'object storage answered with no body', res.status,
+            );
+        }
+        const { Readable } = await import('node:stream');
+        const { pipeline } = await import('node:stream/promises');
+        // `node:stream/web` and the DOM lib declare the same runtime object as
+        // two unrelated types, so `fromWeb` needs it restated.
+        const source = Readable.fromWeb(res.body as unknown as WebReadableStream<Uint8Array>);
+
+        let bytes = 0;
+        async function* counted() {
+            for await (const chunk of source) {
+                bytes += chunk.length;
+                yield chunk;
+            }
+        }
+
+        if (typeof destination !== 'string') {
+            await pipeline(counted(), destination);
+            return bytes;
+        }
+        const { createWriteStream } = await import('node:fs');
+        const { rename, unlink } = await import('node:fs/promises');
+        const partial = `${destination}.part`;
+        try {
+            await pipeline(counted(), createWriteStream(partial));
+        } catch (err) {
+            await unlink(partial).catch(() => {});
+            throw err;
+        }
+        await rename(partial, destination);
+        return bytes;
+    }
+
+    /**
+     * Download one dataset file and hand back its bytes.
+     *
+     * **This holds the entire file in memory**, and the catalog spans five
+     * orders of magnitude: `cdn_ip_v1` is 10 KB and `relay_ip_v1` 78 KB, which
+     * are nothing, while `vpn_ip_extended_v1` is a 628 MB mmdb and
+     * `resproxy_ip_90d_v1` 1.79 GB of csv.gz, which will cost you that much
+     * resident memory in one allocation and can fail outright. Reach for this
+     * at the small end, where the bytes are going straight into a parser; use
+     * `downloadDatabase` for anything you have not measured.
+     */
+    async downloadDatabaseBytes(id: string, format: DatasetFormat): Promise<Uint8Array> {
+        const res = await this.fetchDatasetFile(id, format);
+        return new Uint8Array(await res.arrayBuffer());
+    }
+
+    // Follows the 302 as a SECOND, unauthenticated request: the presigned URL
+    // carries its own authorization, so forwarding the API key would hand a
+    // credential to a host that has no business holding it.
+    private async fetchDatasetFile(id: string, format: DatasetFormat): Promise<Response> {
+        const url = await this.downloadUrl(id, format);
+        return withRetry(this.retries, async () => {
+            const res = await this.fetchImpl(url);
+            if (!res.ok) {
+                // Left unread: the status is what separates a lapsed link from
+                // a refused one, and the body is not bounded by anything.
+                void res.body?.cancel();
+                throw errorFromResponse(res.status, res.headers, {
+                    error: `object storage refused the download link with status ${res.status}`,
+                });
+            }
+            return res;
         });
     }
 }
