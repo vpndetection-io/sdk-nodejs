@@ -11,8 +11,9 @@
 //
 //   1. Nothing on the registry satisfies the declared range. Before the first
 //      release there is no published artifact to test.
-//   2. No VPNDETECTION_STAGING_KEY. The keyless tests still run; only the keyed
-//      ones are skipped, inside the suite.
+//   2. A tier's staging key is missing. The unauthenticated tests still run, and
+//      each tier without a key skips from inside the suite, so the skip and its
+//      reason land in the TAP output rather than in this script's preamble.
 //
 // npm, deliberately, not pnpm: the repo root carries a pnpm workspace whose
 // `minimumReleaseAge` would refuse a version published minutes ago, and a
@@ -23,6 +24,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { lstatSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { RUNGS, skipFor } from '../lib/tiers.mjs';
 
 const PACKAGE = 'vpndetection';
 
@@ -44,10 +47,12 @@ function main() {
     }
     console.log(`==> ${PACKAGE}@${range} matches published ${versions.join(', ')}`);
 
-    // Empty, not just unset: Actions interpolates a secret that does not exist
+    // Empty counts as absent: Actions interpolates a secret that does not exist
     // to an empty string, and an empty key is sent as no key at all.
-    if ((process.env.VPNDETECTION_STAGING_KEY ?? '').trim() === '') {
-        notice('VPNDETECTION_STAGING_KEY is not set: running the keyless tests only');
+    const absent = tiersWhere((rung) => skipFor(rung) !== false);
+    console.log(`==> tiers with a key: ${tiersWhere((rung) => skipFor(rung) === false).join(', ')}`);
+    if (absent.length > 0) {
+        notice(`no staging key for ${absent.join(', ')}: those tiers are skipped`);
     }
 
     // Both removed so every run resolves the range afresh. A kept lockfile
@@ -58,7 +63,8 @@ function main() {
     run('npm', ['install', '--no-audit', '--no-fund'], dir);
 
     assertInstalledFromRegistry(dir, versions);
-    run('node', ['--test', 'test/staging.test.mjs'], dir);
+    // node's own glob, not the shell's: this spawns without one.
+    run('node', ['--test', 'test/*.test.mjs'], dir);
 }
 
 // `npm view <name>@<range> version` is the registry's own resolver, so the range
@@ -106,6 +112,10 @@ function run(command, args, cwd) {
     if (res.status !== 0) {
         throw new Error(`${command} ${args.join(' ')} exited ${res.status}`);
     }
+}
+
+function tiersWhere(predicate) {
+    return RUNGS.filter(predicate).map((rung) => rung.tier);
 }
 
 function readJson(path) {
