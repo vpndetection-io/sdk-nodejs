@@ -26,7 +26,7 @@ const NO_KEY = skipFor(MAX_RUNG);
 // than failing as a missing method.
 const NO_TRANSFER = NO_KEY || needsVersion('1.2.0', 'download, downloadBytes and checksums');
 
-// The max organization licenses `cdn_ip` for redistribution, and at ~10 KB it is
+// The max organization licenses `cdn_ip` for license_type, and at ~10 KB it is
 // the only dataset small enough to move in CI. Named rather than discovered:
 // `list` is the one endpoint whose payload does not match the schema this client
 // was generated from, so nothing here may be derived from it.
@@ -69,8 +69,8 @@ test('the licensed catalogue answers the schema the client was generated from', 
             assert.equal(typeof d.in_term, 'boolean');
             assert.ok(['expired', 'licensed', 'unlicensed'].includes(d.standing),
                 `${d.base} carries an undocumented standing`);
-            const rights = ['evaluation', 'internal', 'redistribute'];
-            assert.ok(rights.includes(d.redistribution), `${d.base} carries an undocumented right`);
+            const rights = ['evaluation', 'standard', 'redistribute'];
+            assert.ok(rights.includes(d.license_type), `${d.base} carries an undocumented right`);
             // The point of the family shape: a license covers the family, and
             // these are the ids the download and checksum methods take. Before
             // the spec was corrected this list did not exist, so list() could
