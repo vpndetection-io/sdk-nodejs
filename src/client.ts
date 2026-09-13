@@ -183,6 +183,10 @@ export class VPNDetection {
     /**
      * What this client's key is entitled to, and how much of it has been used.
      *
+     * Named for what it answers rather than `me`, which sits one letter from
+     * `myIp` and means something quite different: one is which address you are
+     * calling FROM, the other is which account you are calling AS.
+     *
      * Unlike a lookup there is no useful unauthenticated answer, so a client
      * built without a key gets an unauthorized error rather than a partial one.
      *
@@ -194,7 +198,7 @@ export class VPNDetection {
      * Deliberately NOT cached: the whole point is what has been spent, and a
      * cached answer is a wrong one within seconds of the next request.
      */
-    async me(options: LookupOptions = {}): Promise<AccountMe> {
+    async myAccount(options: LookupOptions = {}): Promise<AccountMe> {
         const timeoutMs = options.timeoutMs ?? this.timeoutMs;
         return withRetry(options.retries ?? this.retries, async () => {
             const res = await deadline(timeoutMs, (signal) => accountMe({
@@ -202,6 +206,16 @@ export class VPNDetection {
             }));
             return unwrap<AccountMe>(res);
         });
+    }
+
+    /**
+     * The former name of `myAccount`.
+     *
+     * @deprecated Use `myAccount`. Kept because it shipped in 3.1.0 and 4.0.0;
+     * it goes at the next major.
+     */
+    async me(options: LookupOptions = {}): Promise<AccountMe> {
+        return this.myAccount(options);
     }
 
     /**
