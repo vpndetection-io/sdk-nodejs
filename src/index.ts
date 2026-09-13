@@ -13,3 +13,6 @@ export type {
     Database, DatabaseFormat, DatabaseFormatSize, DatabaseMetadata, DatabaseMetadataColumn,
     DatabaseVersion, DbChecksums, Download, LicenseType, Standing,
 } from './generated/types.gen.js';
+export type {
+    AccountMe, AccountApikey, AccountPlan, AccountUsage,
+} from './generated/types.gen.js';

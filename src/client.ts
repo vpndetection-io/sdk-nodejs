@@ -8,12 +8,12 @@ import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { createClient, createConfig } from './generated/client/index.js';
 import type { Client } from './generated/client/index.js';
 import {
-    databaseChecksum, databaseMetadata, downloadDatabase as downloadRedirect,
-    listDatabases, listDownloads, lookupIp,
+    accountMe, databaseChecksum, databaseMetadata, downloadDatabase as downloadRedirect,
+    listDatabases, listDownloads, lookupIp, lookupMyIp,
 } from './generated/sdk.gen.js';
 import type {
-    Database, DatabaseFormat, DatabaseMetadata, DbChecksums, Download, ListDatabasesResponses,
-    ListDownloadsResponses, LookupResponse,
+    AccountMe, Database, DatabaseFormat, DatabaseMetadata, DbChecksums, Download,
+    ListDatabasesResponses, ListDownloadsResponses, LookupResponse,
 } from './generated/types.gen.js';
 
 import { bogonResult, isBogon } from './bogon.js';
@@ -156,6 +156,52 @@ export class VPNDetection {
         });
         this.cache?.set(ip, result);
         return result;
+    }
+
+    /**
+     * Classify the address this client is calling from.
+     *
+     * The same answer `lookup` would give for that address, at the same cost
+     * against your allowance. The address is the one our edge observed, so a
+     * call made through a proxy or a VPN reports the exit it left through -
+     * usually the point of asking.
+     *
+     * Deliberately NOT cached. The cache is keyed by address, and which
+     * address this is IS the question: a machine that moves between networks
+     * would otherwise be told where it used to be.
+     */
+    async myIp(options: LookupOptions = {}): Promise<Result> {
+        const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+        return withRetry(options.retries ?? this.retries, async () => {
+            const res = await deadline(timeoutMs, (signal) => lookupMyIp({
+                client: this.client, signal: signal,
+            }));
+            return toResult(unwrap<LookupResponse>(res));
+        });
+    }
+
+    /**
+     * What this client's key is entitled to, and how much of it has been used.
+     *
+     * Unlike a lookup there is no useful unauthenticated answer, so a client
+     * built without a key gets an unauthorized error rather than a partial one.
+     *
+     * Usage counts against the ALLOWANCE WINDOW - the anniversary of the
+     * subscription, not the calendar month and not the billing period - and it
+     * is the same number a lookup is gated on. It can lag by a few seconds,
+     * because requests are counted in memory and flushed in aggregate.
+     *
+     * Deliberately NOT cached: the whole point is what has been spent, and a
+     * cached answer is a wrong one within seconds of the next request.
+     */
+    async me(options: LookupOptions = {}): Promise<AccountMe> {
+        const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+        return withRetry(options.retries ?? this.retries, async () => {
+            const res = await deadline(timeoutMs, (signal) => accountMe({
+                client: this.client, signal: signal,
+            }));
+            return unwrap<AccountMe>(res);
+        });
     }
 
     /**

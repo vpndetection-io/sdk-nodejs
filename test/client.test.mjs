@@ -164,3 +164,75 @@ test('the downloads limit reaches the wire, and is omitted when not given', asyn
     assert.equal(seen[0], null, 'no limit means no query parameter, so the API default applies');
     assert.equal(seen[1], '200');
 });
+
+// A fetch that answers one fixed body and counts calls, for the two endpoints
+// that take no argument.
+function countingFetch(body) {
+    const state = { calls: 0, urls: [] };
+    const fn = async (input) => {
+        const url = typeof input === 'string' ? input : input.url;
+        state.calls++;
+        state.urls.push(new URL(url).pathname);
+        return new Response(JSON.stringify(body), {
+            status: 200, headers: { 'content-type': 'application/json' },
+        });
+    };
+    return { fetch: fn, state: state };
+}
+
+test('myIp asks the server which address you are', async () => {
+    const t = countingFetch({ ip: '203.0.113.9', is_vpn: true });
+    const client = new VPNDetection({ fetch: t.fetch });
+    const result = await client.myIp();
+    assert.equal(result.ip, '203.0.113.9');
+    assert.equal(result.isVpn, true);
+    assert.equal(t.state.urls[0], '/myip');
+});
+
+// The cache is keyed by address, and which address this is IS the question, so
+// a second call has to ask again.
+test('myIp is not cached', async () => {
+    const t = countingFetch({ ip: '203.0.113.9', is_vpn: false });
+    const client = new VPNDetection({ fetch: t.fetch });
+    await client.myIp();
+    await client.myIp();
+    await client.myIp();
+    assert.equal(t.state.calls, 3);
+});
+
+test('me reports the plan and the usage', async () => {
+    const t = countingFetch({
+        org_id: '85bb51e4-2eb6-4a31-8e4d-02ba8b98fe61',
+        apikey: { id: '0ab424cc-7619-4dad-b027-afacdc2cedb0', expires: null, allowed_cidrs: [] },
+        plan: { key: 'max', tier: 'max' },
+        usage: {
+            requests: 580, quota: 5000000, hard_limit: null,
+            window_start: '2026-09-04T07:00:00Z', window_end: '2026-10-04T07:00:00Z',
+        },
+    });
+    const client = new VPNDetection({ fetch: t.fetch, apiKey: 'k' });
+    const acct = await client.me();
+    assert.equal(acct.plan.key, 'max');
+    assert.equal(acct.usage.requests, 580);
+    // An uncapped plan reports null, which is not zero: zero would read as
+    // "stop serving immediately".
+    assert.equal(acct.usage.hard_limit, null);
+    assert.equal(t.state.urls[0], '/api/v1/account/me');
+});
+
+// Usage is the whole point, so a cached answer is a wrong one within seconds.
+test('me is not cached', async () => {
+    const t = countingFetch({
+        org_id: 'f32191d0-ef02-450e-a505-eb5814c35cab',
+        apikey: { id: '10c2b437-3aa2-4a63-bd17-8e7c8c7f0def', expires: null, allowed_cidrs: [] },
+        plan: { key: 'free', tier: 'free' },
+        usage: {
+            requests: 1, quota: 2, hard_limit: 2,
+            window_start: '2026-09-01T00:00:00Z', window_end: '2026-10-01T00:00:00Z',
+        },
+    });
+    const client = new VPNDetection({ fetch: t.fetch, apiKey: 'k' });
+    await client.me();
+    await client.me();
+    assert.equal(t.state.calls, 2);
+});
