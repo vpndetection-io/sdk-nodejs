@@ -12,16 +12,13 @@ import {
     listDatabases, listDownloads, lookupIp,
 } from './generated/sdk.gen.js';
 import type {
-    Database, DatabaseMetadata, DbChecksums, Download, ListDatabasesResponses,
+    Database, DatabaseFormat, DatabaseMetadata, DbChecksums, Download, ListDatabasesResponses,
     ListDownloadsResponses, LookupResponse,
 } from './generated/types.gen.js';
 
 import { bogonResult, isBogon } from './bogon.js';
 import { errorFromResponse, VPNDetectionError } from './errors.js';
 import { toResult, type Result } from './types.js';
-
-/** The formats a database is published in. Not every database is built in both. */
-export type DatasetFormat = 'csvgz' | 'mmdb';
 
 /**
  * Where `download` puts the bytes: a path to write, or a stream you opened
@@ -226,7 +223,7 @@ export class DatabaseApi {
      * publishes is the API's choice, not ours, and picking one here is how the
      * previous version came to return `undefined`.
      */
-    async checksums(id: string, format: DatasetFormat): Promise<DbChecksums> {
+    async checksums(id: string, format: DatabaseFormat): Promise<DbChecksums> {
         return withRetry(this.retries, async () => {
             const res = await deadline(this.timeoutMs, (signal) => databaseChecksum({
                 client: this.client, query: { id: id, format: format }, signal: signal,
@@ -260,7 +257,7 @@ export class DatabaseApi {
      * runs to gigabytes; the link authorizes the START of a transfer, so one
      * already running is not interrupted when it lapses.
      */
-    async downloadUrl(id: string, format: DatasetFormat): Promise<string> {
+    async downloadUrl(id: string, format: DatabaseFormat): Promise<string> {
         return withRetry(this.retries, async () => {
             const res = await deadline(this.timeoutMs, (signal) => downloadRedirect({
                 client: this.client,
@@ -299,9 +296,9 @@ export class DatabaseApi {
      * problems and only one of them is ours.
      */
     async download(
-        id: string, format: DatasetFormat, destination: DownloadDestination,
+        id: string, format: DatabaseFormat, destination: DownloadDestination,
     ): Promise<number> {
-        const res = await this.fetchDatasetFile(id, format);
+        const res = await this.fetchDatabaseFile(id, format);
         if (res.body === null) {
             throw new VPNDetectionError(
                 'server_error', 'object storage answered with no body', res.status,
@@ -349,15 +346,15 @@ export class DatabaseApi {
      * at the small end, where the bytes are going straight into a parser; use
      * `download` for anything you have not measured.
      */
-    async downloadBytes(id: string, format: DatasetFormat): Promise<Uint8Array> {
-        const res = await this.fetchDatasetFile(id, format);
+    async downloadBytes(id: string, format: DatabaseFormat): Promise<Uint8Array> {
+        const res = await this.fetchDatabaseFile(id, format);
         return new Uint8Array(await res.arrayBuffer());
     }
 
     // Follows the 302 as a SECOND, unauthenticated request: the presigned URL
     // carries its own authorization, so forwarding the API key would hand a
     // credential to a host that has no business holding it.
-    private async fetchDatasetFile(id: string, format: DatasetFormat): Promise<Response> {
+    private async fetchDatabaseFile(id: string, format: DatabaseFormat): Promise<Response> {
         const url = await this.downloadUrl(id, format);
         return withRetry(this.retries, async () => {
             const res = await this.fetchImpl(url);
