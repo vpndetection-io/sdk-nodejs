@@ -1,6 +1,7 @@
 export { VPNDetection, DatabaseApi, DEFAULT_BASE_URL } from './client.js';
 export type {
-    Options, CacheOptions, LookupOptions, BatchOptions, DatasetChecksums, DatasetFormat,
+    Options, CacheOptions, LookupOptions, BatchOptions, DownloadsOptions, DatasetChecksums,
+    DatasetFormat,
     DownloadDestination,
 } from './client.js';
 export { isBogon } from './bogon.js';

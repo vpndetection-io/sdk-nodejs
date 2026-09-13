@@ -46,6 +46,11 @@ export interface CacheOptions {
     ttlMs?: number;
 }
 
+export interface DownloadsOptions {
+    /** How many attempts to return, newest first. The API clamps this to 200. */
+    limit?: number;
+}
+
 export interface Options {
     /**
      * Your API key. Omit it entirely to use the free tier, which answers
@@ -233,10 +238,18 @@ export class DatabaseApi {
         });
     }
 
-    async downloads(): Promise<Download[]> {
+    /**
+     * Your organization's recent download attempts, newest first.
+     *
+     * Refusals are listed too: a denial is what answers "it stopped working",
+     * and its absence answers nothing.
+     */
+    async downloads(options: DownloadsOptions = {}): Promise<Download[]> {
         return withRetry(this.retries, async () => {
             const res = await deadline(this.timeoutMs, (signal) => listDownloads({
-                client: this.client, signal: signal,
+                client: this.client,
+                ...(options.limit === undefined ? {} : { query: { limit: options.limit } }),
+                signal: signal,
             }));
             return unwrap<ListDownloadsResponses[200]>(res).downloads;
         });

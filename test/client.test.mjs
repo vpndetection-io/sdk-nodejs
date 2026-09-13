@@ -116,3 +116,24 @@ test('database responses are unwrapped at the right depth', async () => {
     assert.deepEqual(await client.database.downloads(), [{ id: 'vpn_ip_extended_v1' }]);
     assert.equal((await client.database.metadata('vpn_ip_extended_v1')).id, 'vpn_ip_extended_v1');
 });
+
+// The API bounds the history at 200 and defaults to 50. An option that is
+// accepted and silently dropped passes any test that only reads the result, so
+// this asserts the query string that actually left.
+test('the downloads limit reaches the wire, and is omitted when not given', async () => {
+    const seen = [];
+    const fetchFn = async (input) => {
+        const url = new URL(typeof input === 'string' ? input : input.url);
+        seen.push(url.searchParams.get('limit'));
+        return new Response(JSON.stringify({ downloads: [] }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+        });
+    };
+    const client = new VPNDetection({ fetch: fetchFn, apiKey: 'k' });
+
+    await client.database.downloads();
+    await client.database.downloads({ limit: 200 });
+
+    assert.equal(seen[0], null, 'no limit means no query parameter, so the API default applies');
+    assert.equal(seen[1], '200');
+});
