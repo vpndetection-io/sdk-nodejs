@@ -50,27 +50,37 @@ test('the licensed catalogue answers the schema the client was generated from', 
     async () => {
         const datasets = await maxClient().database.list();
 
-        assert.ok(datasets.length > 0, 'the max organization licenses nothing');
+        assert.ok(datasets.length > 0, 'the catalogue arrived empty');
         // Named first, and with what actually arrived, because every assertion
         // below reads as `undefined` when the payload disagrees, and a bare
         // "expected string" costs a whole CI cycle to interpret.
         const served = [...new Set(datasets.flatMap((d) => Object.keys(d)))].sort();
         assert.ok(
             served.includes('base') && served.includes('versions'),
-            `the payload carries ${served.join(', ')}, and LicensedDataset declares base and versions`,
+            `the payload carries ${served.join(', ')}, and Database declares base and versions`,
         );
         assert.ok(
             !served.includes('docsGroup'),
             'docsGroup is a docs-site slug and must not be published as API surface',
         );
+        const licensed = [];
         for (const d of datasets) {
             assert.equal(typeof d.base, 'string');
             assert.equal(typeof d.name, 'string');
             assert.equal(typeof d.in_term, 'boolean');
             assert.ok(['expired', 'licensed', 'unlicensed'].includes(d.standing),
                 `${d.base} carries an undocumented standing`);
+            // `list` answers the WHOLE catalogue, so an unlicensed family is a normal
+            // row with no licence type at all. Asserting one either way is what tells
+            // a null apart from a value this client cannot read.
             const rights = ['evaluation', 'standard', 'redistribute'];
-            assert.ok(rights.includes(d.license_type), `${d.base} carries an undocumented right`);
+            if (d.standing === 'unlicensed') {
+                assert.equal(d.license_type, null, `${d.base} is unlicensed and carries a right`);
+            } else {
+                assert.ok(rights.includes(d.license_type),
+                    `${d.base} carries an undocumented right`);
+                licensed.push(d.base);
+            }
             // The point of the family shape: a license covers the family, and
             // these are the ids the download and checksum methods take. Before
             // the spec was corrected this list did not exist, so list() could
@@ -82,7 +92,10 @@ test('the licensed catalogue answers the schema the client was generated from', 
                 assert.ok(Array.isArray(v.formats), `${v.id} carries no formats`);
             }
         }
-        console.log(`licensed: ${datasets.flatMap((d) => d.versions.map((v) => v.id)).join(', ')}`);
+        // The max org holds grants in staging, so an empty list here is the catalogue
+        // arriving without any of them rather than a plan that buys nothing.
+        assert.ok(licensed.length > 0, 'the max organization licenses nothing');
+        console.log(`catalogue: ${datasets.length}, licensed: ${licensed.join(', ')}`);
     });
 
 test('a dataset the organization does not license is refused cleanly', { skip: NO_KEY }, async () => {
