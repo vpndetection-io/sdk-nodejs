@@ -96,7 +96,7 @@ test('database responses are unwrapped at the right depth', async () => {
             format: 'mmdb',
             checksums: { md5: 'm', sha1: 's1', sha256: 's256', sha512: 's512' },
         },
-        '/api/v1/database/list': { datasets: [{ id: 'vpn_ip_extended_v1' }] },
+        '/api/v1/database/list': { databases: [{ id: 'vpn_ip_extended_v1' }] },
         '/api/v1/database/downloads': { downloads: [{ id: 'vpn_ip_extended_v1' }] },
         '/api/v1/database/metadata': { id: 'vpn_ip_extended_v1', columns: [] },
     };
@@ -115,6 +115,33 @@ test('database responses are unwrapped at the right depth', async () => {
     assert.deepEqual(await client.database.list(), [{ id: 'vpn_ip_extended_v1' }]);
     assert.deepEqual(await client.database.downloads(), [{ id: 'vpn_ip_extended_v1' }]);
     assert.equal((await client.database.metadata('vpn_ip_extended_v1')).id, 'vpn_ip_extended_v1');
+});
+
+// The spec documents three credential forms because the API accepts three, and
+// the generator will happily apply all of them - putting the key in the query
+// string of every request. A query string is the one place a secret must not
+// be: access logs, proxy logs and browser history all keep it, and none of
+// those are ours. Asserted on what leaves the client, because the request still
+// succeeds either way.
+test('the key is sent in the Authorization header and nowhere else', async () => {
+    let seen = null;
+    const fetchFn = async (input, init) => {
+        const url = new URL(typeof input === 'string' ? input : input.url);
+        const headers = new Headers(input?.headers ?? init?.headers ?? {});
+        seen = {
+            query: url.searchParams.get('apikey'),
+            authorization: headers.get('authorization'),
+            xApiKey: headers.get('x-api-key'),
+        };
+        return new Response(JSON.stringify({ databases: [] }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+        });
+    };
+    await new VPNDetection({ fetch: fetchFn, apiKey: 'SECRET' }).database.list();
+
+    assert.equal(seen.authorization, 'Bearer SECRET');
+    assert.equal(seen.query, null, 'the key must never reach a URL');
+    assert.equal(seen.xApiKey, null, 'one credential form, not three');
 });
 
 // The API bounds the history at 200 and defaults to 50. An option that is

@@ -12,18 +12,15 @@ import {
     listDatabases, listDownloads, lookupIp,
 } from './generated/sdk.gen.js';
 import type {
-    DatabaseChecksumResponses, DatabaseMetadataResponses, DatasetMetadata, Download,
-    LicensedDataset, ListDatabasesResponses, ListDownloadsResponses, LookupResponse,
+    Database, DatabaseMetadata, DbChecksums, Download, ListDatabasesResponses,
+    ListDownloadsResponses, LookupResponse,
 } from './generated/types.gen.js';
 
 import { bogonResult, isBogon } from './bogon.js';
 import { errorFromResponse, VPNDetectionError } from './errors.js';
 import { toResult, type Result } from './types.js';
 
-/** The digests published alongside a dataset file. Which ones are present varies by dataset. */
-export type DatasetChecksums = DatabaseChecksumResponses[200]['checksums'];
-
-/** The formats a dataset is published in. Not every dataset is built in both. */
+/** The formats a database is published in. Not every database is built in both. */
 export type DatasetFormat = 'csvgz' | 'mmdb';
 
 /**
@@ -112,7 +109,7 @@ export class VPNDetection {
         const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
         this.client = createClient(createConfig({
             baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
-            ...(options.apiKey === undefined ? {} : { auth: () => options.apiKey }),
+            ...(options.apiKey === undefined ? {} : { auth: bearerOnly(options.apiKey) }),
             fetch: fetchImpl,
         }));
         this.cache = options.cache === false ? null : new LRUCache<string, Result>({
@@ -204,21 +201,21 @@ export class DatabaseApi {
         private readonly fetchImpl: typeof globalThis.fetch,
     ) {}
 
-    async list(): Promise<LicensedDataset[]> {
+    async list(): Promise<Database[]> {
         return withRetry(this.retries, async () => {
             const res = await deadline(this.timeoutMs, (signal) => listDatabases({
                 client: this.client, signal: signal,
             }));
-            return unwrap<ListDatabasesResponses[200]>(res).datasets;
+            return unwrap<ListDatabasesResponses[200]>(res).databases;
         });
     }
 
-    async metadata(id: string): Promise<DatasetMetadata> {
+    async metadata(id: string): Promise<DatabaseMetadata> {
         return withRetry(this.retries, async () => {
             const res = await deadline(this.timeoutMs, (signal) => databaseMetadata({
                 client: this.client, query: { id: id }, signal: signal,
             }));
-            return unwrap<DatabaseMetadataResponses[200]>(res);
+            return unwrap<DatabaseMetadata>(res);
         });
     }
 
@@ -229,12 +226,12 @@ export class DatabaseApi {
      * publishes is the API's choice, not ours, and picking one here is how the
      * previous version came to return `undefined`.
      */
-    async checksums(id: string, format: DatasetFormat): Promise<DatasetChecksums> {
+    async checksums(id: string, format: DatasetFormat): Promise<DbChecksums> {
         return withRetry(this.retries, async () => {
             const res = await deadline(this.timeoutMs, (signal) => databaseChecksum({
                 client: this.client, query: { id: id, format: format }, signal: signal,
             }));
-            return unwrap<DatabaseChecksumResponses[200]>(res).checksums;
+            return unwrap<{ checksums: DbChecksums }>(res).checksums;
         });
     }
 
@@ -375,6 +372,23 @@ export class DatabaseApi {
             return res;
         });
     }
+}
+
+/**
+ * Sends the key in the `Authorization` header and nowhere else.
+ *
+ * The API accepts three credential forms and the spec documents all three, so
+ * the generator applies EVERY one of them - putting the key in the query string
+ * of every request alongside the headers. A query string is the one place a
+ * secret should never be: it lands in access logs, proxy logs and browser
+ * history, none of which we control. `?apikey=` exists for a human with curl or
+ * a browser bar, not for a client that can set a header.
+ *
+ * Returning undefined for the other schemes is what suppresses them; the
+ * generated `getAuthToken` drops a scheme whose callback yields nothing.
+ */
+function bearerOnly(apiKey: string): (auth: { scheme?: string }) => string | undefined {
+    return (auth) => (auth.scheme === 'bearer' ? apiKey : undefined);
 }
 
 // The generated client puts a non-2xx body on `error` rather than `data`, and
