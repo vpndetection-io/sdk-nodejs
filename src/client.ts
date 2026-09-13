@@ -34,6 +34,11 @@ export type DownloadDestination = string | Writable;
 
 export const DEFAULT_BASE_URL = 'https://api.vpndetection.io';
 
+// Matches the other SDKs, whose HTTP clients default to 30s. Node's global
+// fetch has no whole-request limit of its own, so without this a hung API holds
+// a caller until undici's 300s headers timeout - which is why this exists.
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export interface CacheOptions {
     /** Maximum number of addresses held. Default 10000. */
     max?: number;
@@ -54,6 +59,13 @@ export interface Options {
     concurrency?: number;
     /** Retry attempts for a transient failure. Default 2. */
     retries?: number;
+    /**
+     * How long one request may take before it is abandoned, in milliseconds.
+     * Default 30000. Applies per attempt, so a retried call may take longer in
+     * total. A dataset transfer is deliberately exempt: it is expected to run
+     * for minutes.
+     */
+    timeoutMs?: number;
     /** Override the HTTP implementation, mostly for tests. */
     fetch?: typeof globalThis.fetch;
 }
@@ -62,6 +74,8 @@ export interface Options {
 export interface LookupOptions {
     /** Retry attempts for a transient failure. */
     retries?: number;
+    /** How long one attempt may take before it is abandoned, in milliseconds. */
+    timeoutMs?: number;
 }
 
 /** Per-call overrides for one batch. Anything omitted falls back to the client's setting. */
@@ -81,6 +95,7 @@ export class VPNDetection {
     private readonly cache: LRUCache<string, Result> | null;
     private readonly limit: ReturnType<typeof pLimit>;
     private readonly retries: number;
+    private readonly timeoutMs: number;
 
     /** The licensed dataset downloads, for keys that carry the `db.download` scope. */
     readonly database: DatabaseApi;
@@ -101,7 +116,8 @@ export class VPNDetection {
         });
         this.limit = pLimit(options.concurrency ?? 8);
         this.retries = options.retries ?? 2;
-        this.database = new DatabaseApi(this.client, this.retries, fetchImpl);
+        this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+        this.database = new DatabaseApi(this.client, this.retries, this.timeoutMs, fetchImpl);
     }
 
     /**
@@ -131,8 +147,11 @@ export class VPNDetection {
         if (hit !== undefined) {
             return hit;
         }
+        const timeoutMs = options.timeoutMs ?? this.timeoutMs;
         const result = await withRetry(options.retries ?? this.retries, async () => {
-            const res = await lookupIp({ client: this.client, path: { ip: ip } });
+            const res = await deadline(timeoutMs, (signal) => lookupIp({
+                client: this.client, path: { ip: ip }, signal: signal,
+            }));
             const body = unwrap<LookupResponse>(res);
             return toResult(body);
         });
@@ -176,19 +195,24 @@ export class DatabaseApi {
     constructor(
         private readonly client: Client,
         private readonly retries: number,
+        private readonly timeoutMs: number,
         private readonly fetchImpl: typeof globalThis.fetch,
     ) {}
 
     async list(): Promise<LicensedDataset[]> {
         return withRetry(this.retries, async () => {
-            const res = await listDatabases({ client: this.client });
+            const res = await deadline(this.timeoutMs, (signal) => listDatabases({
+                client: this.client, signal: signal,
+            }));
             return unwrap<ListDatabasesResponses[200]>(res).datasets;
         });
     }
 
     async metadata(id: string): Promise<DatasetMetadata> {
         return withRetry(this.retries, async () => {
-            const res = await databaseMetadata({ client: this.client, query: { id: id } });
+            const res = await deadline(this.timeoutMs, (signal) => databaseMetadata({
+                client: this.client, query: { id: id }, signal: signal,
+            }));
             return unwrap<DatabaseMetadataResponses[200]>(res);
         });
     }
@@ -202,16 +226,18 @@ export class DatabaseApi {
      */
     async checksums(id: string, format: DatasetFormat): Promise<DatasetChecksums> {
         return withRetry(this.retries, async () => {
-            const res = await databaseChecksum({
-                client: this.client, query: { id: id, format: format },
-            });
+            const res = await deadline(this.timeoutMs, (signal) => databaseChecksum({
+                client: this.client, query: { id: id, format: format }, signal: signal,
+            }));
             return unwrap<DatabaseChecksumResponses[200]>(res).checksums;
         });
     }
 
     async downloads(): Promise<Download[]> {
         return withRetry(this.retries, async () => {
-            const res = await listDownloads({ client: this.client });
+            const res = await deadline(this.timeoutMs, (signal) => listDownloads({
+                client: this.client, signal: signal,
+            }));
             return unwrap<ListDownloadsResponses[200]>(res).downloads;
         });
     }
@@ -226,11 +252,12 @@ export class DatabaseApi {
      */
     async downloadUrl(id: string, format: DatasetFormat): Promise<string> {
         return withRetry(this.retries, async () => {
-            const res = await downloadRedirect({
+            const res = await deadline(this.timeoutMs, (signal) => downloadRedirect({
                 client: this.client,
                 query: { id: id, format: format },
                 redirect: 'manual',
-            } as never);
+                signal: signal,
+            } as never));
             if (res.response === undefined) {
                 throw new VPNDetectionError('network', 'no response from the API');
             }
@@ -355,6 +382,32 @@ function unwrap<T>(res: Res): T {
 // server-supplied Retry-After, which p-retry has no way to know about. A 429
 // carrying that header is the only 429 worth retrying, which is why the wait
 // and the retry decision both key off the same field.
+/**
+ * Bound one attempt, and report an expiry as our own error rather than the
+ * runtime's `TimeoutError`, whose message says nothing about which call gave up.
+ *
+ * The signal is built per call, so a retried request gets a fresh budget - the
+ * same per-attempt semantics the Go and Python clients have.
+ */
+async function deadline<T>(timeoutMs: number, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    // Raced, not left to the signal alone: aborting releases the socket, but only
+    // a transport that HONORS the signal then settles, and a substituted `fetch`
+    // need not. Clearing the timer stops the losing side rejecting into nothing.
+    const expiry = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+            controller.abort();
+            reject(new VPNDetectionError('network', `request timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+    });
+    try {
+        return await Promise.race([fn(controller.signal), expiry]);
+    } finally {
+        clearTimeout(timer!);
+    }
+}
+
 async function withRetry<T>(retries: number, fn: () => Promise<T>): Promise<T> {
     try {
         return await pRetry(fn, {
