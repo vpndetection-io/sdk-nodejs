@@ -9,7 +9,7 @@
         "node": ">=22"
     },
     "dependencies": {
-        "vpndetection": "^1.0.0"
+        "vpndetection": "^3.0.0"
     },
     "scripts": {
         "test": "node --test test/*.test.mjs",
