@@ -170,6 +170,14 @@ const bytes = await client.database.downloadBytes('cdn_ip_v1', 'csvgz');
 
 `downloadBytes` holds the whole file in memory, and the catalog runs from `cdn_ip_v1` at 10 KB to `resproxy_ip_90d_v1` at 1.79 GB, so use `download` for anything you have not measured.
 
+The formats are `csvgz` and `mmdb`, exported as `DATABASE_FORMATS` for a caller that needs to validate or enumerate rather than switch — `STANDINGS` and `LICENSE_TYPES` likewise. Anything else is refused before the request leaves, as a `bad_request` naming what is allowed, because the TypeScript union only guards a TypeScript caller:
+
+```js
+import { DATABASE_FORMATS } from 'vpndetection';
+
+DATABASE_FORMATS.includes(fromTheCommandLine);  // ['csvgz', 'mmdb']
+```
+
 ### Absent is not false
 
 Only `ip` and `isVpn` come back on every plan. A field your plan does not include is `undefined`, which means "not in your plan" rather than "checked, and no".

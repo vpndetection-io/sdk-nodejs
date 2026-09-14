@@ -9,6 +9,7 @@ export type { ErrorKind } from './errors.js';
 export type {
     Result, VpnDetail, ClassDetail, ProxyDetail, LookupResponse,
 } from './types.js';
+export { DATABASE_FORMATS, STANDINGS, LICENSE_TYPES } from './types.js';
 export type {
     Database, DatabaseFormat, DatabaseFormatSize, DatabaseMetadata, DatabaseMetadataColumn,
     DatabaseVersion, DbChecksums, Download, Standing,

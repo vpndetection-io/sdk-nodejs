@@ -18,7 +18,7 @@ import type {
 
 import { bogonResult, isBogon } from './bogon.js';
 import { errorFromResponse, VPNDetectionError } from './errors.js';
-import { toResult, type Result } from './types.js';
+import { DATABASE_FORMATS, toResult, type Result } from './types.js';
 
 /**
  * Where `download` puts the bytes: a path to write, or a stream you opened
@@ -284,6 +284,7 @@ export class DatabaseApi {
      * previous version came to return `undefined`.
      */
     async checksums(id: string, format: DatabaseFormat): Promise<DbChecksums> {
+        assertFormat(format);
         return withRetry(this.retries, async () => {
             const res = await deadline(this.timeoutMs, (signal) => databaseChecksum({
                 client: this.client, query: { id: id, format: format }, signal: signal,
@@ -318,6 +319,7 @@ export class DatabaseApi {
      * already running is not interrupted when it lapses.
      */
     async downloadUrl(id: string, format: DatabaseFormat): Promise<string> {
+        assertFormat(format);
         return withRetry(this.retries, async () => {
             const res = await deadline(this.timeoutMs, (signal) => downloadRedirect({
                 client: this.client,
@@ -451,6 +453,25 @@ function bearerOnly(apiKey: string): (auth: { scheme?: string }) => string | und
 // The generated client puts a non-2xx body on `error` rather than `data`, and
 // types `response` as optional because a transport failure produces neither.
 interface Res { data?: unknown, error?: unknown, response?: Response }
+
+/**
+ * Rejects a format the API does not publish, before the network sees it.
+ *
+ * The generated union guards a TypeScript caller at COMPILE time and nobody
+ * else: a format arriving from a CLI flag, a form field or a model is a plain
+ * string, and without this it costs a round trip and comes back as a 400 whose
+ * message names nothing the caller can act on. Ruby, PHP, Python, Java and Perl
+ * all reject locally; this is Node catching up.
+ */
+function assertFormat(format: DatabaseFormat): void {
+    if (DATABASE_FORMATS.includes(format)) {
+        return;
+    }
+    throw new VPNDetectionError(
+        'bad_request',
+        `invalid format ${JSON.stringify(format)}; must be one of ${DATABASE_FORMATS.join(', ')}`,
+    );
+}
 
 function unwrap<T>(res: Res): T {
     if (res.response === undefined) {

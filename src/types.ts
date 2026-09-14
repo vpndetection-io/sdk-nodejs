@@ -1,8 +1,25 @@
 import type {
-    ClassDetail, LookupResponse, ProxyDetail, VpnDetail,
+    ClassDetail, Database, DatabaseFormat, LookupResponse, ProxyDetail, Standing, VpnDetail,
 } from './generated/types.gen.js';
 
 export type { ClassDetail, ProxyDetail, VpnDetail, LookupResponse };
+
+// The runtime halves of the three closed vocabularies the API publishes, for a
+// caller that wants to validate or enumerate rather than switch. The generated
+// names are TYPES and are erased at compile time, so a JS caller - or anything
+// taking one of these from a CLI flag, a form field or a model - has nothing to
+// check against without them.
+//
+// Each is TYPED by the generated union, so a value the spec does not define
+// will not compile; that a value is MISSING is what `conformance.test.mjs` pins
+// against the pinned spec, since a subset would type-check happily.
+export const DATABASE_FORMATS: readonly DatabaseFormat[] = ['csvgz', 'mmdb'];
+
+export const STANDINGS: readonly Standing[] = ['expired', 'licensed', 'unlicensed'];
+
+export const LICENSE_TYPES: readonly NonNullable<Database['license_type']>[] = [
+    'evaluation', 'standard', 'redistribute',
+];
 
 /**
  * What a lookup answers.
