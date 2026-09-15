@@ -66,6 +66,15 @@ export function errorFromResponse(
     return new VPNDetectionError('server_error', message, status);
 }
 
+/**
+ * A per-entry failure inside a successful batch: the status the single lookup
+ * would have answered, and its message, with no headers at all - so a 429 here
+ * is a spent allowance, which is the only kind the API puts in an entry.
+ */
+export function errorFromEntry(entry: { status: number, error: string }): VPNDetectionError {
+    return errorFromResponse(entry.status, { get: () => null }, { error: entry.error });
+}
+
 // The two APIs behind this host answer with different envelopes: the lookup
 // endpoint uses `error`, the database endpoints use `rc`. Both are read here so
 // a caller never has to know which one they hit.

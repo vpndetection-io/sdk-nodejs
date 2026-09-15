@@ -22,9 +22,12 @@ const camel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 // so "never touched the network" is asserted rather than assumed.
 function stubFetch(routes) {
     const calls = [];
-    const fn = async (input) => {
+    const fn = async (input, init) => {
         const url = typeof input === 'string' ? input : input.url;
         calls.push(url);
+        if (new URL(url).pathname === '/batch') {
+            return batchResponse(routes, await bodyOf(input, init));
+        }
         const ip = decodeURIComponent(new URL(url).pathname.slice(1));
         const r = routes[ip];
         if (r === undefined) {
@@ -38,6 +41,36 @@ function stubFetch(routes) {
         });
     };
     return { fetch: fn, calls: calls };
+}
+
+// The request body, whichever way the client handed it to fetch: as a Request
+// object, or as an init alongside a URL string.
+async function bodyOf(input, init) {
+    if (typeof input !== 'string' && typeof input.text === 'function') {
+        return input.text();
+    }
+    return typeof init?.body === 'string' ? init.body : '';
+}
+
+// A POST /batch is answered the way the API answers one: every address the
+// table knows is a result if its route is a 200 and an entry error otherwise,
+// and an unknown address is the 400 the API gives a string that is not one.
+function batchResponse(routes, body) {
+    const results = {};
+    const errors = {};
+    for (const ip of JSON.parse(body || '{}').ips ?? []) {
+        const r = routes[ip];
+        if (r === undefined) {
+            errors[ip] = { status: 400, error: 'not a valid IP address' };
+        } else if ((r.status ?? 200) === 200) {
+            results[ip] = r.body;
+        } else {
+            errors[ip] = { status: r.status, error: r.body.error };
+        }
+    }
+    return new Response(JSON.stringify({ results: results, errors: errors }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+    });
 }
 
 test('isBogon matches the canonical ranges', () => {
@@ -138,6 +171,7 @@ test('one bad address does not lose the rest of the batch', async () => {
     assert.deepEqual([...got.keys()], c.expect.keys);
     for (const k of c.expect.errorKeys) {
         assert.ok(got.get(k) instanceof VPNDetectionError, `${k} should carry its error`);
+        assert.equal(got.get(k).kind, c.expect.errorKinds[k], `${k} should be ${c.expect.errorKinds[k]}`);
     }
     assert.equal(got.get('1.1.1.1').isVpn, false, 'the good address still answered');
 });
@@ -149,6 +183,40 @@ test('a cache hit issues no second request', async () => {
 
     for (let i = 0; i < c.repeat; i++) {
         await client.lookupBatch(c.input);
+    }
+    assert.equal(stub.calls.length, c.expect.httpRequests);
+});
+
+test('a large batch is sent in chunks of a thousand', async () => {
+    const c = data.batch.find((b) => b.name === 'chunks-of-one-thousand');
+    const stub = stubFetch(Object.fromEntries(c.input.map((ip) => [ip, { body: { ip: ip, is_vpn: false } }])));
+    const client = new VPNDetection({ fetch: stub.fetch, cache: false });
+    const got = await client.lookupBatch(c.input);
+
+    assert.equal(got.size, c.expect.keyCount);
+    assert.equal(stub.calls.length, c.expect.httpRequests);
+    for (const ip of c.input) {
+        assert.equal(got.get(ip).ip, ip, `${ip} should be answered for itself`);
+    }
+});
+
+// A per-entry failure carries no headers, so its 429 can only be a spent
+// allowance, and a 500 is the server's; neither is retried per entry, because
+// retries belong to the call and the call succeeded.
+test('an entry error is classified by its status', async () => {
+    const c = data.batch.find((b) => b.name === 'an-entry-error-is-classified-by-its-status');
+    const stub = stubFetch({
+        '1.1.1.1': { body: { ip: '1.1.1.1', is_vpn: false } },
+        '8.8.8.8': { status: 429, body: { error: 'request allowance exceeded; raise or remove your overage limit' } },
+        '9.9.9.9': { status: 500, body: { error: 'lookup failed' } },
+    });
+    const client = new VPNDetection({ fetch: stub.fetch, retries: 3 });
+    const got = await client.lookupBatch(c.input);
+
+    assert.deepEqual([...got.keys()], c.expect.keys);
+    for (const [ip, kind] of Object.entries(c.expect.errorKinds)) {
+        assert.ok(got.get(ip) instanceof VPNDetectionError, `${ip} should carry its error`);
+        assert.equal(got.get(ip).kind, kind, `${ip} should be ${kind}`);
     }
     assert.equal(stub.calls.length, c.expect.httpRequests);
 });

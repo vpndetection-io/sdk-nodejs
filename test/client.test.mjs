@@ -11,25 +11,35 @@ const data = JSON.parse(readFileSync(new URL('../testdata/testdata.json', import
 
 // Answers slowly enough that concurrent calls overlap, and records the peak
 // number in flight. Asserting the PEAK is the only way to tell a real limit
-// from an option that was accepted and ignored.
+// from an option that was accepted and ignored. A batch arrives as one POST per
+// chunk, so it is answered from the addresses in the body.
 function concurrencyTrackingFetch(delayMs = 20) {
     const state = { inFlight: 0, peak: 0, calls: 0 };
-    const fn = async (input) => {
-        const url = typeof input === 'string' ? input : input.url;
-        const ip = decodeURIComponent(new URL(url).pathname.slice(1));
+    const fn = async (input, init) => {
+        const body = typeof input === 'string' ? (init?.body ?? '') : await input.text();
         state.calls++;
         state.inFlight++;
         state.peak = Math.max(state.peak, state.inFlight);
         await new Promise((r) => setTimeout(r, delayMs));
         state.inFlight--;
-        return new Response(JSON.stringify({ ip: ip, is_vpn: false }), {
+        const results = {};
+        for (const ip of JSON.parse(body || '{}').ips ?? []) {
+            results[ip] = { ip: ip, is_vpn: false };
+        }
+        return new Response(JSON.stringify({ results: results, errors: {} }), {
             status: 200, headers: { 'content-type': 'application/json' },
         });
     };
     return { fetch: fn, state: state };
 }
 
-const addrs = Array.from({ length: 12 }, (_, i) => `9.9.9.${i + 1}`);
+// Enough addresses for seven chunks of the batch endpoint's 1000, so a
+// concurrency bound has something to bound: one request per chunk, and only the
+// chunks overlap.
+const addrs = Array.from(
+    { length: 6001 },
+    (_, i) => `9.${1 + Math.floor(i / 65536)}.${Math.floor(i / 256) % 256}.${i % 256}`,
+);
 
 test('isBogon is on the client and agrees with the standalone export', () => {
     const client = new VPNDetection();
@@ -45,7 +55,7 @@ test('batch concurrency is configurable per call', async () => {
 
     await client.lookupBatch(addrs, { concurrency: 3 });
 
-    assert.equal(t.state.calls, addrs.length);
+    assert.equal(t.state.calls, 7, 'one request per chunk of 1000');
     assert.ok(t.state.peak <= 3, `peak in flight was ${t.state.peak}, expected at most 3`);
     assert.ok(t.state.peak > 1, 'requests should still overlap');
 });

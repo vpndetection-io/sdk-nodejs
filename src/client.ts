@@ -9,15 +9,15 @@ import { createClient, createConfig } from './generated/client/index.js';
 import type { Client } from './generated/client/index.js';
 import {
     myEntitlement, databaseChecksum, databaseMetadata, downloadDatabase as downloadRedirect,
-    listDatabases, listDownloads, lookupIp, lookupMyIp,
+    listDatabases, listDownloads, lookupBatch, lookupIp, lookupMyIp,
 } from './generated/sdk.gen.js';
 import type {
     Entitlement, Database, DatabaseFormat, DatabaseMetadata, DbChecksums, Download,
-    ListDatabasesResponses, ListDownloadsResponses, LookupResponse,
+    ListDatabasesResponses, ListDownloadsResponses, LookupResponse, BatchLookupResponse,
 } from './generated/types.gen.js';
 
 import { bogonResult, isBogon } from './bogon.js';
-import { errorFromResponse, VPNDetectionError } from './errors.js';
+import { errorFromEntry, errorFromResponse, VPNDetectionError } from './errors.js';
 import { DATABASE_FORMATS, toResult, type Result } from './types.js';
 
 /**
@@ -32,6 +32,10 @@ export const DEFAULT_BASE_URL = 'https://api.vpndetection.io';
 // fetch has no whole-request limit of its own, so without this a hung API holds
 // a caller until undici's 300s headers timeout - which is why this exists.
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+// The most addresses POST /batch takes in one call; a larger batch is sent in
+// chunks of this size.
+const BATCH_MAX = 1000;
 
 export interface CacheOptions {
     /** Maximum number of addresses held. Default 10000. */
@@ -54,7 +58,7 @@ export interface Options {
     baseUrl?: string;
     /** Pass `false` to disable caching. */
     cache?: CacheOptions | false;
-    /** Concurrent in-flight requests during a batch. Default 8. */
+    /** Concurrent batch requests - chunks of up to 1000 addresses - during a batch. Default 8. */
     concurrency?: number;
     /** Retry attempts for a transient failure. Default 2. */
     retries?: number;
@@ -79,7 +83,7 @@ export interface LookupOptions {
 
 /** Per-call overrides for one batch. Anything omitted falls back to the client's setting. */
 export interface BatchOptions extends LookupOptions {
-    /** Concurrent in-flight requests for THIS batch only. */
+    /** Concurrent batch requests for THIS batch only. */
     concurrency?: number;
 }
 
@@ -209,33 +213,97 @@ export class VPNDetection {
     }
 
     /**
-     * Classify many addresses concurrently.
+     * Classify many addresses in as few requests as possible.
      *
-     * Keyed by address rather than positional, so duplicates in the input
-     * collapse to a single request and the caller never has to line two lists
-     * up. An address that fails carries its error as its value, so one bad
-     * entry cannot lose the rest of the answers.
+     * Bogons are answered locally and cached answers are reused; everything
+     * else goes to the batch endpoint in chunks of up to 1000 addresses, with
+     * at most `concurrency` chunks in flight. Keyed by address rather than
+     * positional, so duplicates in the input collapse to a single entry and the
+     * caller never has to line two lists up. An address that fails carries its
+     * error as its value, so one bad entry cannot lose the rest of the answers:
+     * the API reports a per-entry failure with the status the single lookup
+     * would have answered, and a chunk that fails as a whole marks every
+     * address in it.
      */
     async lookupBatch(
         ips: Iterable<string>, options: BatchOptions = {},
     ): Promise<Map<string, Result | VPNDetectionError>> {
         const unique = [...new Set(ips)];
+        const out = new Map<string, Result | VPNDetectionError>();
+        const pending: string[] = [];
+        for (const ip of unique) {
+            if (isBogon(ip)) {
+                out.set(ip, bogonResult(ip));
+                continue;
+            }
+            const hit = this.cache?.get(ip);
+            if (hit !== undefined) {
+                out.set(ip, hit);
+                continue;
+            }
+            pending.push(ip);
+        }
         // A per-call concurrency gets its own limiter; without one the call
         // would share the instance's budget and silently ignore the override.
         const limit = options.concurrency === undefined
             ? this.limit
             : pLimit(options.concurrency);
-        const out = new Map<string, Result | VPNDetectionError>();
-        await Promise.all(unique.map((ip) => limit(async () => {
-            try {
-                out.set(ip, await this.lookup(ip, options));
-            } catch (err) {
-                out.set(ip, asError(err));
+        const chunks: string[][] = [];
+        for (let i = 0; i < pending.length; i += BATCH_MAX) {
+            chunks.push(pending.slice(i, i + BATCH_MAX));
+        }
+        await Promise.all(chunks.map((chunk) => limit(async () => {
+            for (const [ip, answer] of await this.lookupChunk(chunk, options)) {
+                out.set(ip, answer);
             }
         })));
-        // Reinstated in input order: Promise.all settles in completion order,
-        // and a caller iterating the map should see what they passed in.
+        // Reinstated in input order: chunks settle in completion order, and a
+        // caller iterating the map should see what they passed in.
         return new Map(unique.map((ip) => [ip, out.get(ip)!]));
+    }
+
+    // One POST /batch, mapped back onto the addresses it was asked about. A
+    // chunk-level failure - the call refused, the transport failing, the
+    // retries exhausted - becomes every address's error, exactly as it would
+    // have been had each been looked up alone.
+    private async lookupChunk(
+        chunk: string[], options: LookupOptions,
+    ): Promise<Map<string, Result | VPNDetectionError>> {
+        const out = new Map<string, Result | VPNDetectionError>();
+        const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+        let body: BatchLookupResponse;
+        try {
+            body = await withRetry(options.retries ?? this.retries, async () => {
+                const res = await deadline(timeoutMs, (signal) => lookupBatch({
+                    client: this.client, body: { ips: chunk }, signal: signal,
+                }));
+                return unwrap<BatchLookupResponse>(res);
+            });
+        } catch (err) {
+            const failure = asError(err);
+            for (const ip of chunk) {
+                out.set(ip, failure);
+            }
+            return out;
+        }
+        for (const ip of chunk) {
+            const served = body.results[ip];
+            if (served !== undefined) {
+                const result = toResult(served);
+                this.cache?.set(ip, result);
+                out.set(ip, result);
+                continue;
+            }
+            const failed = body.errors[ip];
+            if (failed !== undefined) {
+                out.set(ip, errorFromEntry(failed));
+                continue;
+            }
+            out.set(ip, new VPNDetectionError(
+                'server_error', `the batch answer did not include ${ip}`, 200,
+            ));
+        }
+        return out;
     }
 }
 
