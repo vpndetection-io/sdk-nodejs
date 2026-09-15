@@ -21,9 +21,9 @@ importers:
       '@hey-api/openapi-ts':
         specifier: ^0.99.0
         version: 0.99.0(typescript@5.9.3)
-      '@mslm/libjs-eslint-config':
-        specifier: 2.4.0
-        version: 2.4.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      '@mslmio/eslint-config':
+        specifier: ^1.0.0
+        version: 1.0.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
       '@types/node':
         specifier: ^26.2.0
         version: 26.4.0
@@ -126,8 +126,8 @@ packages:
     resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
     engines: {node: '>=8'}
 
-  '@mslm/libjs-eslint-config@2.4.0':
-    resolution: {integrity: sha512-GOx0aEL++0Qcm1HgpTYkSsAEzN1CT5Q6Iy4G8yDPyi7rCAo9HULz4VNPjiSPvx41bI5IMO6AS/++bt57b4VYQQ==, tarball: https://gitea.mslm.io/api/packages/mslm/npm/%40mslm%2Flibjs-eslint-config/-/2.4.0/libjs-eslint-config-2.4.0.tgz}
+  '@mslmio/eslint-config@1.0.0':
+    resolution: {integrity: sha512-itNWllNXcmCvUS5BhQ6i/c5hU6q8Ez+6kRYsVuUe6Yg+S5wXR7Rah91FjQX9kBWLIstGuvcBaswQen6hG4Xjpg==}
     peerDependencies:
       '@shadcn/lint': ^0.1.0
       eslint: '>=9.30.0'
@@ -801,7 +801,7 @@ snapshots:
 
   '@lukeed/ms@2.0.2': {}
 
-  '@mslm/libjs-eslint-config@2.4.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)':
+  '@mslmio/eslint-config@1.0.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)':
     dependencies:
       '@typescript-eslint/eslint-plugin': 8.70.0(@typescript-eslint/parser@8.70.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
       '@typescript-eslint/parser': 8.70.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
