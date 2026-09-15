@@ -1,5 +1,5 @@
 // The licensed-download half, which only the max key can reach: it is the tier
-// holding dataset licences, and `db.download` is a scope the other three keys
+// holding dataset licenses, and `db.download` is a scope the other three keys
 // do not carry.
 //
 // The transfer is budgeted before it starts. `metadata` publishes a size per
@@ -36,7 +36,7 @@ const FORMAT = 'csvgz';
 // tripping it means the suite is pointed somewhere unintended, which is exactly
 // when a transfer must not go ahead.
 const CEILING = 8 * 1024 * 1024;
-// A real catalogue id the max organization holds no licence for.
+// A real catalog id the max organization holds no license for.
 const UNLICENSED_ID = 'hosting_ip_v1';
 
 const facts = [];
@@ -70,8 +70,8 @@ test('the licensed catalogue answers the schema the client was generated from', 
             assert.equal(typeof d.in_term, 'boolean');
             assert.ok(['expired', 'licensed', 'unlicensed'].includes(d.standing),
                 `${d.base} carries an undocumented standing`);
-            // `list` answers the WHOLE catalogue, so an unlicensed family is a normal
-            // row with no licence type at all. Asserting one either way is what tells
+            // `list` answers the WHOLE catalog, so an unlicensed family is a normal
+            // row with no license type at all. Asserting one either way is what tells
             // a null apart from a value this client cannot read.
             const rights = ['evaluation', 'standard', 'redistribute'];
             if (d.standing === 'unlicensed') {
@@ -92,7 +92,7 @@ test('the licensed catalogue answers the schema the client was generated from', 
                 assert.ok(Array.isArray(v.formats), `${v.id} carries no formats`);
             }
         }
-        // The max org holds grants in staging, so an empty list here is the catalogue
+        // The max org holds grants in staging, so an empty list here is the catalog
         // arriving without any of them rather than a plan that buys nothing.
         assert.ok(licensed.length > 0, 'the max organization licenses nothing');
         console.log(`catalogue: ${datasets.length}, licensed: ${licensed.join(', ')}`);

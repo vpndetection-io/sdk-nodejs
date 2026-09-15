@@ -1,7 +1,7 @@
 // Asserts the shared conformance corpus that every VPNDetection SDK asserts.
 //
 // The corpus is generated into testdata/ and is identical across languages, so
-// a behaviour that drifts here fails here rather than surfacing as two client
+// a behavior that drifts here fails here rather than surfacing as two client
 // libraries quietly disagreeing about the same address.
 //
 // Runs against dist/, which is what actually ships.
@@ -200,7 +200,7 @@ test('the closed vocabularies match the pinned spec exactly', () => {
     );
     // `license_type` is deliberately INLINE in the spec (naming a nullable enum
     // makes openapi-python-client emit three unioned copies), so it is read off
-    // the property rather than a named type. `null` is not a licence type.
+    // the property rather than a named type. `null` is not a license type.
     assert.deepEqual(
         [...LICENSE_TYPES].sort(),
         unionMembers(/\n    license_type: ([^;]+);/),
