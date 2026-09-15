@@ -21,5 +21,5 @@ export type {
 export type LicenseType =
     NonNullable<import('./generated/types.gen.js').Database['license_type']>;
 export type {
-    AccountMe, AccountApikey, AccountPlan, AccountUsage,
+    Entitlement, EntitlementApikey, EntitlementPlan, EntitlementUsage,
 } from './generated/types.gen.js';

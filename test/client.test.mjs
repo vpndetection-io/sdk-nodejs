@@ -200,7 +200,7 @@ test('myIp is not cached', async () => {
     assert.equal(t.state.calls, 3);
 });
 
-test('myAccount reports the plan and the usage', async () => {
+test('myEntitlement reports the plan and the usage', async () => {
     const t = countingFetch({
         org_id: '85bb51e4-2eb6-4a31-8e4d-02ba8b98fe61',
         apikey: { id: '0ab424cc-7619-4dad-b027-afacdc2cedb0', expires: null, allowed_cidrs: [] },
@@ -211,17 +211,17 @@ test('myAccount reports the plan and the usage', async () => {
         },
     });
     const client = new VPNDetection({ fetch: t.fetch, apiKey: 'k' });
-    const acct = await client.myAccount();
-    assert.equal(acct.plan.key, 'max');
-    assert.equal(acct.usage.requests, 580);
+    const ent = await client.myEntitlement();
+    assert.equal(ent.plan.key, 'max');
+    assert.equal(ent.usage.requests, 580);
     // An uncapped plan reports null, which is not zero: zero would read as
     // "stop serving immediately".
-    assert.equal(acct.usage.hard_limit, null);
-    assert.equal(t.state.urls[0], '/api/v1/account/me');
+    assert.equal(ent.usage.hard_limit, null);
+    assert.equal(t.state.urls[0], '/api/v1/entitlement/me');
 });
 
 // Usage is the whole point, so a cached answer is a wrong one within seconds.
-test('myAccount is not cached', async () => {
+test('myEntitlement is not cached', async () => {
     const t = countingFetch({
         org_id: 'f32191d0-ef02-450e-a505-eb5814c35cab',
         apikey: { id: '10c2b437-3aa2-4a63-bd17-8e7c8c7f0def', expires: null, allowed_cidrs: [] },
@@ -232,7 +232,7 @@ test('myAccount is not cached', async () => {
         },
     });
     const client = new VPNDetection({ fetch: t.fetch, apiKey: 'k' });
-    await client.myAccount();
-    await client.myAccount();
+    await client.myEntitlement();
+    await client.myEntitlement();
     assert.equal(t.state.calls, 2);
 });

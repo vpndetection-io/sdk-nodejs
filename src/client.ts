@@ -8,11 +8,11 @@ import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { createClient, createConfig } from './generated/client/index.js';
 import type { Client } from './generated/client/index.js';
 import {
-    accountMe, databaseChecksum, databaseMetadata, downloadDatabase as downloadRedirect,
+    myEntitlement, databaseChecksum, databaseMetadata, downloadDatabase as downloadRedirect,
     listDatabases, listDownloads, lookupIp, lookupMyIp,
 } from './generated/sdk.gen.js';
 import type {
-    AccountMe, Database, DatabaseFormat, DatabaseMetadata, DbChecksums, Download,
+    Entitlement, Database, DatabaseFormat, DatabaseMetadata, DbChecksums, Download,
     ListDatabasesResponses, ListDownloadsResponses, LookupResponse,
 } from './generated/types.gen.js';
 
@@ -185,7 +185,7 @@ export class VPNDetection {
      *
      * Named for what it answers rather than `me`, which sits one letter from
      * `myIp` and means something quite different: one is which address you are
-     * calling FROM, the other is which account you are calling AS.
+     * calling FROM, the other is what the key you are calling WITH may spend.
      *
      * Unlike a lookup there is no useful unauthenticated answer, so a client
      * built without a key gets an unauthorized error rather than a partial one.
@@ -198,24 +198,14 @@ export class VPNDetection {
      * Deliberately NOT cached: the whole point is what has been spent, and a
      * cached answer is a wrong one within seconds of the next request.
      */
-    async myAccount(options: LookupOptions = {}): Promise<AccountMe> {
+    async myEntitlement(options: LookupOptions = {}): Promise<Entitlement> {
         const timeoutMs = options.timeoutMs ?? this.timeoutMs;
         return withRetry(options.retries ?? this.retries, async () => {
-            const res = await deadline(timeoutMs, (signal) => accountMe({
+            const res = await deadline(timeoutMs, (signal) => myEntitlement({
                 client: this.client, signal: signal,
             }));
-            return unwrap<AccountMe>(res);
+            return unwrap<Entitlement>(res);
         });
-    }
-
-    /**
-     * The former name of `myAccount`.
-     *
-     * @deprecated Use `myAccount`. Kept because it shipped in 3.1.0 and 4.0.0;
-     * it goes at the next major.
-     */
-    async me(options: LookupOptions = {}): Promise<AccountMe> {
-        return this.myAccount(options);
     }
 
     /**

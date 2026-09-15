@@ -52,10 +52,10 @@ console.log(result.ip);   // the address we saw this call come from
 ### Your plan and usage
 
 ```js
-const acct = await client.myAccount();
-console.log(acct.plan.key);          // max
-console.log(acct.usage.requests);    // 580
-console.log(acct.usage.window_end);  // when the allowance resets
+const ent = await client.myEntitlement();
+console.log(ent.plan.key);          // max
+console.log(ent.usage.requests);    // 580
+console.log(ent.usage.window_end);  // when the allowance resets
 ```
 
 Usage counts against the anniversary of your subscription, not the calendar month and not the billing period, and it is the same number a lookup is gated on. `hard_limit` is null on an uncapped plan, which is not the same as zero.
