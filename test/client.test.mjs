@@ -217,7 +217,7 @@ test('myEntitlement reports the plan and the usage', async () => {
     // An uncapped plan reports null, which is not zero: zero would read as
     // "stop serving immediately".
     assert.equal(ent.usage.hard_limit, null);
-    assert.equal(t.state.urls[0], '/api/v1/entitlement/me');
+    assert.equal(t.state.urls[0], '/api/v1/entitlement');
 });
 
 // Usage is the whole point, so a cached answer is a wrong one within seconds.
