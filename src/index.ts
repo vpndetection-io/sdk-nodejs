@@ -3,8 +3,15 @@ export type {
     Options, CacheOptions, LookupOptions, BatchOptions, DownloadsOptions,
     DownloadDestination,
 } from './client.js';
+export { OauthApi } from './oauth.js';
+export type {
+    OauthOptions, DeviceAuthorizationOptions, PollDeviceTokenOptions,
+    OauthMetadata, DeviceAuthorization, TokenResponse,
+} from './oauth.js';
 export { isBogon } from './bogon.js';
-export { VPNDetectionError } from './errors.js';
+export {
+    VPNDetectionError, OauthError, OauthAccessDeniedError, OauthExpiredTokenError,
+} from './errors.js';
 export type { ErrorKind } from './errors.js';
 export type {
     Result, VpnDetail, ClassDetail, ProxyDetail, LookupResponse,

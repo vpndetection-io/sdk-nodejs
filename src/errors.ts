@@ -35,6 +35,69 @@ export class VPNDetectionError extends Error {
     }
 }
 
+/**
+ * The authorization server refusing an OAuth request: a 4xx whose body names an
+ * OAuth error code. Never retryable as it stands.
+ *
+ * `kind` follows the status like any other failure's. A 401 here means the
+ * client ID is not registered, never the API key, which OAuth requests do not
+ * carry. The two codes a sign-in ends on have their own subclasses.
+ */
+export class OauthError extends VPNDetectionError {
+    /** The server's code, such as `authorization_pending` or `invalid_grant`, kept as sent. */
+    readonly errorCode: string;
+    /** The server's explanation, when it sent one. */
+    readonly errorDescription?: string;
+
+    constructor(errorCode: string, errorDescription?: string, status?: number) {
+        super(
+            status === undefined ? 'bad_request' : errorFromResponse(status, NO_HEADERS, undefined).kind,
+            errorDescription === undefined ? errorCode : `${errorCode}: ${errorDescription}`,
+            status,
+        );
+        this.name = 'OauthError';
+        this.errorCode = errorCode;
+        this.errorDescription = errorDescription;
+    }
+
+    override get retryable(): boolean {
+        return false;
+    }
+}
+
+/** The person refused the sign-in. Its device code is spent, so a new attempt starts over. */
+export class OauthAccessDeniedError extends OauthError {
+    constructor(errorDescription?: string, status?: number) {
+        super('access_denied', errorDescription, status);
+        this.name = 'OauthAccessDeniedError';
+    }
+}
+
+/**
+ * The device code is no longer valid: it expired, or was already used or
+ * refused. A poll that outlives the code raises this itself, with no `status`.
+ */
+export class OauthExpiredTokenError extends OauthError {
+    constructor(errorDescription?: string, status?: number) {
+        super('expired_token', errorDescription, status);
+        this.name = 'OauthExpiredTokenError';
+    }
+}
+
+export function oauthErrorFrom(
+    errorCode: string, errorDescription: string | undefined, status: number,
+): OauthError {
+    if (errorCode === 'access_denied') {
+        return new OauthAccessDeniedError(errorDescription, status);
+    }
+    if (errorCode === 'expired_token') {
+        return new OauthExpiredTokenError(errorDescription, status);
+    }
+    return new OauthError(errorCode, errorDescription, status);
+}
+
+const NO_HEADERS = { get: () => null };
+
 export function errorFromResponse(
     status: number, headers: { get(name: string): string | null }, body: unknown,
 ): VPNDetectionError {
@@ -72,7 +135,7 @@ export function errorFromResponse(
  * is a spent allowance, which is the only kind the API puts in an entry.
  */
 export function errorFromEntry(entry: { status: number, error: string }): VPNDetectionError {
-    return errorFromResponse(entry.status, { get: () => null }, { error: entry.error });
+    return errorFromResponse(entry.status, NO_HEADERS, { error: entry.error });
 }
 
 // The two APIs behind this host answer with different envelopes: the lookup

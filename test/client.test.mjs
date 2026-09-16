@@ -80,6 +80,28 @@ test('without an override the client concurrency still applies', async () => {
     assert.ok(t.state.peak <= 2, `peak in flight was ${t.state.peak}, expected at most 2`);
 });
 
+// p-limit would throw a bare TypeError for these; they are the caller's mistake.
+test('a per-call concurrency below 1 is refused before any request', async () => {
+    let calls = 0;
+    const client = new VPNDetection({
+        fetch: async () => {
+            calls++;
+            throw new Error('the network must not be reached');
+        },
+    });
+    for (const concurrency of [0, -1, 0.5, 1.5, NaN]) {
+        const call = () => client.lookupBatch(['45.83.91.1', '10.0.0.1'], { concurrency: concurrency });
+        await assert.rejects(call, (err) => {
+            assert.ok(err instanceof VPNDetectionError, `${concurrency}: wrong error type`);
+            assert.equal(err.kind, 'bad_request', `${concurrency}`);
+            assert.equal(err.retryable, false, `${concurrency}`);
+            assert.match(err.message, /concurrency/, `${concurrency}`);
+            return true;
+        });
+    }
+    assert.equal(calls, 0);
+});
+
 test('retries are configurable per call', async () => {
     let calls = 0;
     const fetchFn = async () => {
@@ -93,36 +115,6 @@ test('retries are configurable per call', async () => {
     await assert.rejects(() => client.lookup('9.9.9.9', { retries: 2 }));
     // 1 initial attempt plus 2 retries, rather than the instance's 0.
     assert.equal(calls, 3);
-});
-
-// A caller never chunks. 2,500 distinct addresses are three POST /batch requests
-// of at most 1000, each address sent once and answered for itself.
-test('a batch takes any number of addresses and chunks them itself', async () => {
-    const ips = Array.from({ length: 2500 }, (_, i) => `9.1.${Math.floor(i / 256)}.${i % 256}`);
-    const posts = [];
-    const fetchFn = async (input) => {
-        const sent = JSON.parse(await input.text()).ips;
-        posts.push({ method: input.method, path: new URL(input.url).pathname, ips: sent });
-        const results = Object.fromEntries(sent.map((ip) => [ip, { ip: ip, is_vpn: false }]));
-        return new Response(JSON.stringify({ results: results, errors: {} }), {
-            status: 200, headers: { 'content-type': 'application/json' },
-        });
-    };
-    const client = new VPNDetection({ fetch: fetchFn, cache: false });
-
-    const got = await client.lookupBatch(ips);
-
-    assert.equal(posts.length, 3, 'one request per chunk of 1000');
-    for (const post of posts) {
-        assert.equal(post.method, 'POST');
-        assert.equal(post.path, '/batch');
-        assert.ok(post.ips.length <= 1000, `a chunk carried ${post.ips.length} addresses`);
-    }
-    assert.deepEqual(posts.flatMap((p) => p.ips).sort(), [...ips].sort(), 'each address sent exactly once');
-    assert.equal(got.size, ips.length);
-    for (const ip of ips) {
-        assert.equal(got.get(ip).ip, ip, `${ip} should be answered for itself`);
-    }
 });
 
 // Two ways a response stalls: nothing arrives, or the headers do and the body
@@ -147,6 +139,23 @@ const PER_CALL = {
         throw answers[0];
     },
     'database.downloads': (c, o) => c.database.downloads({ limit: 5, ...o }),
+    'oauth.metadata': (c, o) => c.oauth.metadata(o),
+    'oauth.deviceAuthorization': (c, o) => c.oauth.deviceAuthorization('your-client-id', o),
+    'oauth.exchangeDeviceCode': (c, o) => c.oauth.exchangeDeviceCode('your-client-id', 'mo_dc_x', o),
+    'oauth.exchangeRefreshToken': (c, o) => c.oauth.exchangeRefreshToken('your-client-id', 'mo_rt_x', o),
+    'oauth.revoke': (c, o) => c.oauth.revoke('your-client-id', 'mo_rt_x', o),
+    // Waits nothing, and parks rather than spinning if the poll never ends.
+    'oauth.pollDeviceToken': (c, o) => {
+        let waits = 0;
+        c.oauth.clock = {
+            now: () => 0,
+            sleep: () => (++waits > 16 ? new Promise(() => {}) : Promise.resolve()),
+        };
+        const device = {
+            device_code: 'mo_dc_x', user_code: 'x', verification_uri: 'x', expires_in: 900, interval: 5,
+        };
+        return c.oauth.pollDeviceToken('your-client-id', device, o);
+    },
 };
 
 // Set BELOW the client's, so the only deadline that can fire in time is the

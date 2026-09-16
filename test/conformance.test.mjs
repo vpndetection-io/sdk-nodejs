@@ -187,16 +187,35 @@ test('a cache hit issues no second request', async () => {
     assert.equal(stub.calls.length, c.expect.httpRequests);
 });
 
-test('a large batch is sent in chunks of a thousand', async () => {
-    const c = data.batch.find((b) => b.name === 'chunks-of-one-thousand');
-    const stub = stubFetch(Object.fromEntries(c.input.map((ip) => [ip, { body: { ip: ip, is_vpn: false } }])));
-    const client = new VPNDetection({ fetch: stub.fetch, cache: false });
-    const got = await client.lookupBatch(c.input);
+// One POST /batch per chunk of 1000, and no cap on what a caller passes.
+test('a large batch is sent in chunks of a thousand, whatever its size', async (t) => {
+    for (const name of ['chunks-of-one-thousand', 'uncapped-input-is-chunked']) {
+        await t.test(name, async () => {
+            const c = data.batch.find((b) => b.name === name);
+            const posts = [];
+            const fetchFn = async (input) => {
+                const sent = JSON.parse(await input.text()).ips;
+                posts.push({ method: input.method, path: new URL(input.url).pathname, ips: sent });
+                const results = Object.fromEntries(sent.map((ip) => [ip, { ip: ip, is_vpn: false }]));
+                return new Response(JSON.stringify({ results: results, errors: {} }), {
+                    status: 200, headers: { 'content-type': 'application/json' },
+                });
+            };
+            const client = new VPNDetection({ fetch: fetchFn, cache: false });
+            const got = await client.lookupBatch(c.input);
 
-    assert.equal(got.size, c.expect.keyCount);
-    assert.equal(stub.calls.length, c.expect.httpRequests);
-    for (const ip of c.input) {
-        assert.equal(got.get(ip).ip, ip, `${ip} should be answered for itself`);
+            assert.equal(posts.length, c.expect.httpRequests, 'one request per chunk');
+            for (const post of posts) {
+                assert.equal(`${post.method} ${post.path}`, 'POST /batch');
+                assert.ok(post.ips.length <= 1000, `a chunk carried ${post.ips.length} addresses`);
+            }
+            const sent = posts.flatMap((p) => p.ips);
+            assert.deepEqual(sent.sort(), [...c.input].sort(), 'each address sent once');
+            assert.equal(got.size, c.expect.keyCount);
+            for (const ip of c.input) {
+                assert.equal(got.get(ip).ip, ip, `${ip} should be answered for itself`);
+            }
+        });
     }
 });
 

@@ -190,6 +190,27 @@ import { DATABASE_FORMATS } from 'vpndetection';
 DATABASE_FORMATS.includes(fromTheCommandLine);  // ['csvgz', 'mmdb']
 ```
 
+### Sign in with OAuth (device flow)
+
+A program running on the person's own machine can let them sign in with a browser and pick one of their API keys, instead of asking them to paste it:
+
+```js
+const client = new VPNDetection();
+
+const device = await client.oauth.deviceAuthorization('your-client-id', {
+    scope: 'account.read apikeys.read apikeys.reveal',
+});
+console.log(`Open ${device.verification_uri} and enter ${device.user_code}`);
+
+const token = await client.oauth.pollDeviceToken('your-client-id', device);
+if (token.apikey === undefined) {
+    throw new Error("no API key came back: none was picked, or it can't be shown again");
+}
+const keyed = new VPNDetection({ apiKey: token.apikey });
+```
+
+A denied sign-in rejects with `OauthAccessDeniedError` and a code that ran out with `OauthExpiredTokenError`. Client IDs are issued on request from support@vpndetection.io, and `client.oauth.revoke('your-client-id', token.refresh_token)` signs the machine out again.
+
 ### Absent is not false
 
 Only `ip` and `isVpn` come back on every plan. A field your plan does not include is `undefined`, which means "not in your plan" rather than "checked, and no".

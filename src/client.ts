@@ -1,6 +1,5 @@
 import { LRUCache } from 'lru-cache';
 import pLimit from 'p-limit';
-import pRetry from 'p-retry';
 
 import type { Writable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
@@ -18,6 +17,8 @@ import type {
 
 import { bogonResult, isBogon } from './bogon.js';
 import { errorFromEntry, errorFromResponse, VPNDetectionError } from './errors.js';
+import { OauthApi } from './oauth.js';
+import { asError, deadline, unwrap, withRetry } from './transport.js';
 import { DATABASE_FORMATS, toResult, type Result } from './types.js';
 
 /**
@@ -108,6 +109,12 @@ export class VPNDetection {
     /** The licensed dataset downloads, for keys that carry the `db.download` scope. */
     readonly database: DatabaseApi;
 
+    /**
+     * Sign a person in with the OAuth device flow, so a program on their own
+     * machine can be handed one of their API keys. Needs no API key.
+     */
+    readonly oauth: OauthApi;
+
     constructor(options: Options = {}) {
         // Resolved once, because the download path calls object storage
         // directly rather than through the generated client and has to reach
@@ -126,6 +133,7 @@ export class VPNDetection {
         this.retries = options.retries ?? 2;
         this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
         this.database = new DatabaseApi(this.client, this.retries, this.timeoutMs, fetchImpl);
+        this.oauth = new OauthApi(this.client, this.retries, this.timeoutMs);
     }
 
     /**
@@ -228,11 +236,19 @@ export class VPNDetection {
      * error as its value, so one bad entry cannot lose the rest of the answers:
      * the API reports a per-entry failure with the status the single lookup
      * would have answered, and a chunk that fails as a whole marks every
-     * address in it.
+     * address in it. A per-call `concurrency` below 1 is refused as
+     * `bad_request` before anything is sent.
      */
     async lookupBatch(
         ips: Iterable<string>, options: BatchOptions = {},
     ): Promise<Map<string, Result | VPNDetectionError>> {
+        const concurrency = options.concurrency;
+        if (concurrency !== undefined && !(concurrency >= 1 && (Number.isInteger(concurrency)
+            || concurrency === Infinity))) {
+            throw new VPNDetectionError(
+                'bad_request', `concurrency must be a whole number of at least 1, got ${concurrency}`,
+            );
+        }
         const unique = [...new Set(ips)];
         const out = new Map<string, Result | VPNDetectionError>();
         const pending: string[] = [];
@@ -250,9 +266,7 @@ export class VPNDetection {
         }
         // A per-call concurrency gets its own limiter; without one the call
         // would share the instance's budget and silently ignore the override.
-        const limit = options.concurrency === undefined
-            ? this.limit
-            : pLimit(options.concurrency);
+        const limit = concurrency === undefined ? this.limit : pLimit(concurrency);
         const chunks: string[][] = [];
         for (let i = 0; i < pending.length; i += BATCH_MAX) {
             chunks.push(pending.slice(i, i + BATCH_MAX));
@@ -514,10 +528,6 @@ function bearerOnly(apiKey: string): (auth: { scheme?: string }) => string | und
     return (auth) => (auth.scheme === 'bearer' ? apiKey : undefined);
 }
 
-// The generated client puts a non-2xx body on `error` rather than `data`, and
-// types `response` as optional because a transport failure produces neither.
-interface Res { data?: unknown, error?: unknown, response?: Response }
-
 /**
  * Rejects a format the API does not publish, before the network sees it.
  *
@@ -535,72 +545,4 @@ function assertFormat(format: DatabaseFormat): void {
         'bad_request',
         `invalid format ${JSON.stringify(format)}; must be one of ${DATABASE_FORMATS.join(', ')}`,
     );
-}
-
-function unwrap<T>(res: Res): T {
-    if (res.response === undefined) {
-        throw new VPNDetectionError('network', 'no response from the API');
-    }
-    if (!res.response.ok) {
-        throw errorFromResponse(res.response.status, res.response.headers, res.error ?? res.data);
-    }
-    return res.data as T;
-}
-
-// p-retry owns the backoff schedule; the extra sleep here is what honors a
-// server-supplied Retry-After, which p-retry has no way to know about. A 429
-// carrying that header is the only 429 worth retrying, which is why the wait
-// and the retry decision both key off the same field.
-/**
- * Bound one attempt, and report an expiry as our own error rather than the
- * runtime's `TimeoutError`, whose message says nothing about which call gave up.
- *
- * The signal is built per call, so a retried request gets a fresh budget - the
- * same per-attempt semantics the Go and Python clients have.
- */
-async function deadline<T>(timeoutMs: number, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    // Raced, not left to the signal alone: aborting releases the socket, but only
-    // a transport that HONORS the signal then settles, and a substituted `fetch`
-    // need not. Clearing the timer stops the losing side rejecting into nothing.
-    const expiry = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-            controller.abort();
-            reject(new VPNDetectionError('network', `request timed out after ${timeoutMs}ms`));
-        }, timeoutMs);
-    });
-    try {
-        return await Promise.race([fn(controller.signal), expiry]);
-    } finally {
-        clearTimeout(timer!);
-    }
-}
-
-async function withRetry<T>(retries: number, fn: () => Promise<T>): Promise<T> {
-    try {
-        return await pRetry(fn, {
-            retries: retries,
-            shouldRetry: ({ error }) => !(error instanceof VPNDetectionError) || error.retryable,
-            onFailedAttempt: async ({ error }) => {
-                const seconds = error instanceof VPNDetectionError ? error.retryAfterSeconds : undefined;
-                if (seconds !== undefined && seconds > 0) {
-                    await new Promise((r) => setTimeout(r, seconds * 1000));
-                }
-            },
-        });
-    } catch (err) {
-        throw asError(err);
-    }
-}
-
-function asError(err: unknown): VPNDetectionError {
-    if (err instanceof VPNDetectionError) {
-        return err;
-    }
-    const cause = (err as { cause?: unknown })?.cause;
-    if (cause instanceof VPNDetectionError) {
-        return cause;
-    }
-    return new VPNDetectionError('network', err instanceof Error ? err.message : String(err));
 }
