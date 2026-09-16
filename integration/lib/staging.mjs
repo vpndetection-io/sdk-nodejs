@@ -73,11 +73,22 @@ export function clientFor(rung, onRequest = () => {}) {
     return new VPNDetection({
         baseUrl: STAGING,
         ...(key === '' ? {} : { apiKey: key }),
-        fetch: (...args) => {
-            onRequest(requestFacts(args, key));
+        fetch: async (...args) => {
+            onRequest({ ...requestFacts(args, key), ips: await batchAddresses(args) });
             return fetch(...args);
         },
     });
+}
+
+// The addresses a POST carried, read off a CLONE so the request still sends its
+// body; undefined for anything else. Addresses are the one part of a body worth
+// remembering, and they are not a secret.
+async function batchAddresses(args) {
+    const input = args[0];
+    if (typeof input === 'string' || input.method !== 'POST') {
+        return undefined;
+    }
+    return JSON.parse(await input.clone().text()).ips;
 }
 
 /**
