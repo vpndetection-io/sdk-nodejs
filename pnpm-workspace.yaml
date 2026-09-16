@@ -3,3 +3,10 @@ minimumReleaseAge: 10080
 # field and the cooldown hard-fails (ERR_PNPM_MISSING_TIME), lower the window for
 # that one install and restore it - see docs/lib/pnpm.md. The lockfile then
 # carries the resolution and --frozen-lockfile needs no exception.
+
+# @hey-api/json-schema-ref-parser pins js-yaml 4.2.0 exactly, which carries three
+# high advisories (GHSA-52cp-r559-cp3m, GHSA-5p4m-2wfm-xmqj, GHSA-2883-xcg3-v3hh).
+# Dev-only, and it only ever parses our own pinned spec. Drop this once the
+# generator's own pin moves past 4.3.2.
+overrides:
+  "@hey-api/json-schema-ref-parser>js-yaml": "4.3.2"
