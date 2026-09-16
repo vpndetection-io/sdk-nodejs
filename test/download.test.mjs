@@ -17,7 +17,11 @@ const MIB = Buffer.alloc(1024 * 1024, 0x61);
 
 // Serves the API's 302 and the object storage it points at, on one origin, and
 // records every request so a test can assert what did NOT happen.
-function origin({ blobBytes = SMALL.length, storageStatus = 200, dieAfterBytes = null } = {}) {
+//
+// `storageRefusals` is how many storage requests are answered 503 before the file is served.
+function origin({
+    blobBytes = SMALL.length, storageStatus = 200, dieAfterBytes = null, storageRefusals = 0,
+} = {}) {
     const seen = [];
     const server = createServer((req, res) => {
         const url = new URL(req.url, 'http://127.0.0.1');
@@ -34,6 +38,11 @@ function origin({ blobBytes = SMALL.length, storageStatus = 200, dieAfterBytes =
         if (url.pathname !== '/blob') {
             res.writeHead(404, { 'content-type': 'application/json' });
             res.end(JSON.stringify({ error: 'no such path' }));
+            return;
+        }
+        if (blobRequests({ seen: seen }) <= storageRefusals) {
+            res.writeHead(503);
+            res.end();
             return;
         }
         if (storageStatus !== 200) {
@@ -55,6 +64,10 @@ function origin({ blobBytes = SMALL.length, storageStatus = 200, dieAfterBytes =
         Readable.from(body(blobBytes)).pipe(res);
     });
     return { server: server, seen: seen };
+}
+
+function blobRequests(o) {
+    return o.seen.filter((r) => r.path === '/blob').length;
 }
 
 function* body(total) {
@@ -199,3 +212,39 @@ test('a transfer that dies part way leaves nothing at the destination', async (t
     assert.throws(() => readFileSync(dest), { code: 'ENOENT' });
     assert.throws(() => readFileSync(`${dest}.part`), { code: 'ENOENT' });
 });
+
+// Only the response HEAD of a transfer is retried. A 5xx there has written nothing, so it is as
+// transient as the API's; a body that dies part way is never fetched again, or the second copy
+// would append to the bytes already written. Each half pins the other, so neither passes
+// vacuously, and each counts storage requests before it looks at the outcome.
+test('a storage 5xx before the body is retried', async (t) => {
+    const o = await start({ storageRefusals: 1 });
+    t.after(() => o.server.close());
+    const client = new VPNDetection({ baseUrl: o.baseUrl, apiKey: 'k', retries: 2 });
+
+    const outcome = await client.database.downloadBytes('cdn_ip_v1', 'csvgz').then(
+        (bytes) => ({ bytes: bytes }),
+        (err) => ({ err: err }),
+    );
+
+    assert.equal(blobRequests(o), 2, 'object storage should see the 503 and its retry');
+    assert.equal(outcome.err, undefined);
+    assert.deepEqual(Buffer.from(outcome.bytes), SMALL);
+});
+
+for (const method of ['download', 'downloadBytes']) {
+    test(`${method}: a transfer that dies part way is not fetched again`, async (t) => {
+        const o = await start({ blobBytes: 4 * MIB.length, dieAfterBytes: MIB.length });
+        t.after(() => o.server.close());
+        const client = new VPNDetection({ baseUrl: o.baseUrl, apiKey: 'k', retries: 2 });
+        const rest = method === 'download' ? [join(tmp, 'dies-once.csv.gz')] : [];
+
+        const failed = await client.database[method]('cdn_ip_v1', 'csvgz', ...rest).then(
+            () => false,
+            () => true,
+        );
+
+        assert.equal(blobRequests(o), 1, 'a body that died part way was fetched again');
+        assert.ok(failed, 'a transfer that lost its connection reported success');
+    });
+}
