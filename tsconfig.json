@@ -1,5 +1,8 @@
 {
     "compilerOptions": {
+        // TS 6 defaults are types [] and noUncheckedSideEffectImports true; kept at 5.x behavior.
+        "types": ["*"],
+        "noUncheckedSideEffectImports": false,
         "target": "ES2022",
         "module": "NodeNext",
         "moduleResolution": "NodeNext",

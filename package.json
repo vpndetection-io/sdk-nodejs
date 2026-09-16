@@ -56,10 +56,10 @@
     },
     "devDependencies": {
         "@hey-api/openapi-ts": "^0.99.0",
-        "@mslmio/eslint-config": "^1.0.1",
+        "@mslmio/eslint-config": "^1.1.0",
         "@types/node": "^26.2.0",
-        "eslint": "^9.39.0",
-        "typescript": "^5.9.3"
+        "eslint": "^10.10.0",
+        "typescript": "^6.0.3"
     },
     "scripts": {
         "build": "rm -rf dist && openapi-ts && tsc",
