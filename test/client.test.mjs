@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { VPNDetection, isBogon } from '../dist/index.js';
+import { VPNDetection, VPNDetectionError, isBogon } from '../dist/index.js';
 
 const data = JSON.parse(readFileSync(new URL('../testdata/testdata.json', import.meta.url), 'utf8'));
 
@@ -95,6 +95,99 @@ test('retries are configurable per call', async () => {
     assert.equal(calls, 3);
 });
 
+// A caller never chunks. 2,500 distinct addresses are three POST /batch requests
+// of at most 1000, each address sent once and answered for itself.
+test('a batch takes any number of addresses and chunks them itself', async () => {
+    const ips = Array.from({ length: 2500 }, (_, i) => `9.1.${Math.floor(i / 256)}.${i % 256}`);
+    const posts = [];
+    const fetchFn = async (input) => {
+        const sent = JSON.parse(await input.text()).ips;
+        posts.push({ method: input.method, path: new URL(input.url).pathname, ips: sent });
+        const results = Object.fromEntries(sent.map((ip) => [ip, { ip: ip, is_vpn: false }]));
+        return new Response(JSON.stringify({ results: results, errors: {} }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+        });
+    };
+    const client = new VPNDetection({ fetch: fetchFn, cache: false });
+
+    const got = await client.lookupBatch(ips);
+
+    assert.equal(posts.length, 3, 'one request per chunk of 1000');
+    for (const post of posts) {
+        assert.equal(post.method, 'POST');
+        assert.equal(post.path, '/batch');
+        assert.ok(post.ips.length <= 1000, `a chunk carried ${post.ips.length} addresses`);
+    }
+    assert.deepEqual(posts.flatMap((p) => p.ips).sort(), [...ips].sort(), 'each address sent exactly once');
+    assert.equal(got.size, ips.length);
+    for (const ip of ips) {
+        assert.equal(got.get(ip).ip, ip, `${ip} should be answered for itself`);
+    }
+});
+
+// Two ways a response stalls: nothing arrives, or the headers do and the body
+// never finishes. The deadline has to bound the whole call, not just the first.
+const STALLS = {
+    'no response': () => new Promise(() => {}),
+    'a body that never ends': async () => new Response(new ReadableStream({ start() {} }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+    }),
+};
+
+// Every call that takes per-call options, each surfacing its failure as a
+// rejection. A batch reports a failed chunk as every address's value instead of
+// throwing, so that one rethrows what it was given.
+const PER_CALL = {
+    'lookup': (c, o) => c.lookup('45.83.91.1', o),
+    'myIp': (c, o) => c.myIp(o),
+    'myEntitlement': (c, o) => c.myEntitlement(o),
+    'lookupBatch': async (c, o) => {
+        const answers = [...(await c.lookupBatch(['45.83.91.1', '9.9.9.9'], o)).values()];
+        assert.ok(answers.every((a) => a instanceof VPNDetectionError), 'the chunk should fail as a whole');
+        throw answers[0];
+    },
+    'database.downloads': (c, o) => c.database.downloads({ limit: 5, ...o }),
+};
+
+// Set BELOW the client's, so the only deadline that can fire in time is the
+// per-call one, and its message names which one it was.
+test('a per-call timeoutMs bounds every call below the client default', async () => {
+    for (const [stallName, stall] of Object.entries(STALLS)) {
+        for (const [call, invoke] of Object.entries(PER_CALL)) {
+            const client = new VPNDetection({ retries: 0, timeoutMs: 10_000, cache: false, fetch: stall });
+            const label = `${call}, ${stallName}`;
+            const started = Date.now();
+            await assert.rejects(() => invoke(client, { timeoutMs: 80 }), (err) => {
+                assert.ok(err instanceof VPNDetectionError, `${label}: wrong error type`);
+                assert.equal(err.kind, 'network', label);
+                assert.equal(err.retryable, true, label);
+                assert.match(err.message, /timed out after 80ms/, label);
+                return true;
+            });
+            assert.ok(Date.now() - started < 2000, `${label}: the per-call deadline did not hold`);
+        }
+    }
+});
+
+// Per ATTEMPT, like the client-level one: a retried call gets a fresh budget.
+test('a per-call timeoutMs applies to each attempt', async () => {
+    let calls = 0;
+    const client = new VPNDetection({
+        retries: 0,
+        timeoutMs: 10_000,
+        cache: false,
+        fetch: () => {
+            calls++;
+            return new Promise(() => {});
+        },
+    });
+    await assert.rejects(
+        () => client.lookup('45.83.91.1', { retries: 1, timeoutMs: 80 }),
+        (err) => err instanceof VPNDetectionError && /timed out after 80ms/.test(err.message),
+    );
+    assert.equal(calls, 2, 'one attempt plus one retry, each abandoned at its own deadline');
+});
+
 // The database responses nest their payload, and a hand-written unwrap shape is
 // a claim the compiler cannot check. `checksums` shipped broken in 1.0.x for
 // exactly that reason: it read a top-level `sha256` that is not there, and
@@ -173,6 +266,21 @@ test('the downloads limit reaches the wire, and is omitted when not given', asyn
 
     assert.equal(seen[0], null, 'no limit means no query parameter, so the API default applies');
     assert.equal(seen[1], '200');
+});
+
+test('a per-call timeoutMs never reaches the wire', async () => {
+    const seen = [];
+    const fetchFn = async (input) => {
+        seen.push([...new URL(typeof input === 'string' ? input : input.url).searchParams.keys()]);
+        return new Response(JSON.stringify({ downloads: [] }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+        });
+    };
+    const client = new VPNDetection({ fetch: fetchFn, apiKey: 'k' });
+
+    await client.database.downloads({ limit: 5, timeoutMs: 5000 });
+
+    assert.deepEqual(seen[0], ['limit']);
 });
 
 // A fetch that answers one fixed body and counts calls, for the two endpoints

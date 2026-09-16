@@ -62,7 +62,7 @@ Usage counts against the anniversary of your subscription, not the calendar mont
 
 ### Batch lookup
 
-Look up many addresses at once. Bogons and cached answers are handled locally, and everything else goes to the batch endpoint in chunks of up to 1000 addresses, in parallel:
+Look up as many addresses as you like in one call. Bogons and cached answers are handled locally, and the rest go to the batch endpoint in chunks of up to 1000, in parallel:
 
 ```js
 const results = await client.lookupBatch(['45.83.91.1', '8.8.8.8', '1.1.1.1']);
@@ -78,10 +78,10 @@ for (const [ip, result] of results) {
 
 Results are keyed by address, in the order you first listed each one, so duplicates in your list collapse into a single entry and one address failing never loses the rest: it carries its error as its value, with the status the API would have given that address on its own.
 
-How many chunks are in flight at once, and how many times a failed chunk is retried, are configurable per call:
+How many chunks are in flight at once, how many times a failed chunk is retried, and how long each request may take are configurable per call:
 
 ```js
-const results = await client.lookupBatch(manyIps, { concurrency: 4, retries: 4 });
+const results = await client.lookupBatch(manyIps, { concurrency: 4, retries: 4, timeoutMs: 10_000 });
 ```
 
 ### Caching
@@ -149,6 +149,18 @@ try {
 `kind` is one of `bad_request`, `unauthorized`, `forbidden`, `rate_limited`, `quota_exceeded`, `server_error` or `network`.
 
 Note that `rate_limited` and `quota_exceeded` both arrive as HTTP 429 and are not the same thing. A rate limit is when the API faces extreme traffic bursts and so retrying later works; but a spent quota needs your allowance raised or the window to roll over. The library retries rate limits for you, but not if your quota is exceeded.
+
+### Timeouts
+
+A request that hasn't finished after 30 seconds is abandoned and surfaces as a retryable `network` error. The limit applies to each attempt, so a call that gets retried can take longer in total. Set it for the client, or for a single lookup:
+
+```js
+const client = new VPNDetection({ timeoutMs: 10_000 });
+
+const result = await client.lookup('45.83.91.1', { timeoutMs: 2000 });
+```
+
+A database transfer is exempt, because a large one takes minutes.
 
 ### Database downloads
 

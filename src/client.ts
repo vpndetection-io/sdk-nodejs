@@ -47,6 +47,11 @@ export interface CacheOptions {
 export interface DownloadsOptions {
     /** How many attempts to return, newest first. The API clamps this to 200. */
     limit?: number;
+    /**
+     * How long one attempt may take before it is abandoned, in milliseconds, for
+     * THIS call only. Defaults to the client's `timeoutMs`.
+     */
+    timeoutMs?: number;
 }
 
 export interface Options {
@@ -358,8 +363,9 @@ export class DatabaseApi {
      * and its absence answers nothing.
      */
     async downloads(options: DownloadsOptions = {}): Promise<Download[]> {
+        const timeoutMs = options.timeoutMs ?? this.timeoutMs;
         return withRetry(this.retries, async () => {
-            const res = await deadline(this.timeoutMs, (signal) => listDownloads({
+            const res = await deadline(timeoutMs, (signal) => listDownloads({
                 client: this.client,
                 ...(options.limit === undefined ? {} : { query: { limit: options.limit } }),
                 signal: signal,
