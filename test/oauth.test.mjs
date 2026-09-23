@@ -150,6 +150,29 @@ test('a 2xx that lacks a required member or does not parse is the ordinary error
     }
 });
 
+// No corpus case: every response there decodes. One member left out per case,
+// since a body missing two at once let a defaulting decoder survive elsewhere.
+test('an answer missing any one required member is the ordinary error', async (t) => {
+    const required = {
+        metadata: ['issuer', 'authorization_endpoint', 'token_endpoint'],
+        deviceAuthorization: ['device_code', 'user_code', 'verification_uri', 'expires_in', 'interval'],
+        exchangeDeviceCode: ['access_token', 'token_type', 'expires_in'],
+    };
+    for (const [operation, members] of Object.entries(required)) {
+        for (const member of members) {
+            await t.test(`${operation}: ${member}`, async () => {
+                const body = { ...EVERY_REQUIRED_MEMBER };
+                delete body[member];
+                const stub = oauthStub([{ status: 200, body: body }]);
+                const args = { clientId: 'vpndetection-cli', deviceCode: 'mo_dc_x' };
+                const call = callOauth(oauthClient(stub, { retries: 0 }), operation, args);
+                const err = await settle(call, stub.bound);
+                assertOutcome(err, { type: 'client', kind: 'server_error', status: 200 }, member);
+            });
+        }
+    }
+});
+
 test('a failed answer is an OAuth refusal only when it is one', async (t) => {
     for (const c of corpus.errors.cases) {
         await t.test(c.name, async () => {
