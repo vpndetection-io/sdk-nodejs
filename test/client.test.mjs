@@ -363,3 +363,122 @@ test('myEntitlement is not cached', async () => {
     await client.myEntitlement();
     assert.equal(t.state.calls, 2);
 });
+
+// Answers after a delay and counts what it was asked, a batch by the addresses in
+// its body, so a request shared or sent twice shows in the count.
+function sharingFetch(delayMs, refuse = new Set()) {
+    const state = { paths: [], batched: [] };
+    const fn = async (input, init) => {
+        const request = typeof input === 'string' ? new Request(input, init) : input;
+        const path = new URL(request.url).pathname;
+        state.paths.push(path);
+        await new Promise((r) => setTimeout(r, delayMs));
+        if (path === '/batch') {
+            const ips = JSON.parse(await request.text()).ips;
+            state.batched.push(ips);
+            const results = {};
+            const errors = {};
+            for (const ip of ips) {
+                if (refuse.has(ip)) {
+                    errors[ip] = { status: 403, error: 'forbidden' };
+                } else {
+                    results[ip] = { ip: ip, is_vpn: false };
+                }
+            }
+            return Response.json({ results: results, errors: errors });
+        }
+        const ip = decodeURIComponent(path.slice(1));
+        if (refuse.has(ip)) {
+            return Response.json({ error: 'forbidden' }, { status: 403 });
+        }
+        return Response.json({ ip: ip, is_vpn: false });
+    };
+    return { fetch: fn, state: state };
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Long enough that a call started a quarter of it later is still concurrent.
+const STAGGER = 400;
+
+test('concurrent misses for one address share one request', async () => {
+    const t = sharingFetch(200);
+    const client = new VPNDetection({ fetch: t.fetch });
+
+    const answers = await Promise.all(Array.from({ length: 20 }, () => client.lookup('45.83.91.1')));
+
+    assert.deepEqual(t.state.paths, ['/45.83.91.1'], `20 callers sent ${t.state.paths.length} requests`);
+    for (const answer of answers) {
+        assert.equal(answer.ip, '45.83.91.1');
+    }
+});
+
+test('a shared failure reaches every waiter and is not cached', async () => {
+    const refuse = new Set(['45.83.91.1']);
+    const t = sharingFetch(200, refuse);
+    const client = new VPNDetection({ fetch: t.fetch, retries: 0 });
+
+    const settled = await Promise.allSettled(Array.from({ length: 5 }, () => client.lookup('45.83.91.1')));
+
+    assert.equal(t.state.paths.length, 1);
+    for (const s of settled) {
+        assert.equal(s.status, 'rejected');
+        assert.equal(s.reason.kind, 'forbidden');
+    }
+    refuse.clear();
+    assert.equal((await client.lookup('45.83.91.1')).ip, '45.83.91.1');
+    assert.equal(t.state.paths.length, 2, 'the failure was cached');
+});
+
+test('a batch awaits a lookup in flight', async () => {
+    const t = sharingFetch(STAGGER);
+    const client = new VPNDetection({ fetch: t.fetch });
+
+    const single = client.lookup('45.83.91.1');
+    await sleep(STAGGER / 4);
+    const batch = await client.lookupBatch(['45.83.91.1', '45.83.91.2']);
+    await single;
+
+    assert.equal(batch.get('45.83.91.1').ip, '45.83.91.1');
+    assert.equal(batch.get('45.83.91.2').ip, '45.83.91.2');
+    assert.deepEqual(t.state.batched, [['45.83.91.2']], 'the batch sent the address in flight again');
+    assert.equal(t.state.paths.length, 2);
+});
+
+test('a lookup awaits a batch in flight', async () => {
+    const t = sharingFetch(STAGGER);
+    const client = new VPNDetection({ fetch: t.fetch });
+
+    const batch = client.lookupBatch(['45.83.91.1', '45.83.91.2']);
+    await sleep(STAGGER / 4);
+    const single = await client.lookup('45.83.91.2');
+    await batch;
+
+    assert.equal(single.ip, '45.83.91.2');
+    assert.deepEqual(t.state.paths, ['/batch']);
+});
+
+test('a lookup takes the failure of the batch it joined', async () => {
+    const t = sharingFetch(STAGGER, new Set(['45.83.91.2']));
+    const client = new VPNDetection({ fetch: t.fetch });
+
+    const batch = client.lookupBatch(['45.83.91.1', '45.83.91.2']);
+    await sleep(STAGGER / 4);
+    await assert.rejects(client.lookup('45.83.91.2'), (err) => err.kind === 'forbidden');
+    const answers = await batch;
+
+    assert.equal(answers.get('45.83.91.2').kind, 'forbidden');
+    assert.deepEqual(t.state.paths, ['/batch']);
+});
+
+test('a client without a cache shares nothing', async () => {
+    const t = sharingFetch(100);
+    const client = new VPNDetection({ fetch: t.fetch, cache: false });
+
+    await Promise.all([
+        ...Array.from({ length: 3 }, () => client.lookup('45.83.91.1')),
+        client.lookupBatch(['45.83.91.1']),
+        client.lookupBatch(['45.83.91.1']),
+    ]);
+
+    assert.equal(t.state.paths.length, 5);
+});

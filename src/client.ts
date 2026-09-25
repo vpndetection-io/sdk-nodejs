@@ -101,7 +101,10 @@ export interface BatchOptions extends LookupOptions {
  */
 export class VPNDetection {
     private readonly client: Client;
-    private readonly cache: LRUCache<string, Result> | null;
+    // Keyed by address. The context is how a call sends the request when the
+    // address has none in flight: `fetch()` runs it synchronously, so a batch
+    // knows which addresses it leads before it builds a chunk.
+    private readonly cache: LRUCache<string, Result, () => Promise<Result>> | null;
     private readonly limit: ReturnType<typeof pLimit>;
     private readonly retries: number;
     private readonly timeoutMs: number;
@@ -125,9 +128,15 @@ export class VPNDetection {
             ...(options.apiKey === undefined ? {} : { auth: bearerOnly(options.apiKey) }),
             fetch: fetchImpl,
         }));
-        this.cache = options.cache === false ? null : new LRUCache<string, Result>({
+        this.cache = options.cache === false ? null : new LRUCache<string, Result, () => Promise<Result>>({
             max: options.cache?.max ?? 10_000,
             ttl: options.cache?.ttlMs ?? 60 * 60 * 1000,
+            // Concurrent misses for one address share one request: every
+            // `fetch()` while it is in flight gets the same promise, and a
+            // failure rejects them all and is cached for none.
+            fetchMethod: (_ip, _stale, { context }) => context(),
+            // An eviction must not fail the callers awaiting a request.
+            ignoreFetchAbort: true,
         });
         this.limit = pLimit(options.concurrency ?? 8);
         this.retries = options.retries ?? 2;
@@ -153,26 +162,29 @@ export class VPNDetection {
      * Classify one address.
      *
      * A bogon is answered locally and never reaches the network. Everything
-     * else is served, then cached for this instance.
+     * else is served, then cached for this instance. Calls that miss the cache
+     * while a request for their address is in flight, a batch's included, await
+     * that request rather than sending their own, and take its answer, sent
+     * under the options of the call that led it.
      */
     async lookup(ip: string, options: LookupOptions = {}): Promise<Result> {
         if (isBogon(ip)) {
             return bogonResult(ip);
         }
-        const hit = this.cache?.get(ip);
-        if (hit !== undefined) {
-            return hit;
+        if (this.cache === null) {
+            return this.serve(ip, options);
         }
+        return (await this.cache.fetch(ip, { context: () => this.serve(ip, options) }))!;
+    }
+
+    private async serve(ip: string, options: LookupOptions): Promise<Result> {
         const timeoutMs = options.timeoutMs ?? this.timeoutMs;
-        const result = await withRetry(options.retries ?? this.retries, async () => {
+        return withRetry(options.retries ?? this.retries, async () => {
             const res = await deadline(timeoutMs, (signal) => lookupIp({
                 client: this.client, path: { ip: ip }, signal: signal,
             }));
-            const body = unwrap<LookupResponse>(res);
-            return toResult(body);
+            return toResult(unwrap<LookupResponse>(res));
         });
-        this.cache?.set(ip, result);
-        return result;
     }
 
     /**
@@ -228,9 +240,11 @@ export class VPNDetection {
     /**
      * Classify many addresses in as few requests as possible.
      *
-     * Bogons are answered locally and cached answers are reused; everything
-     * else goes to the batch endpoint in chunks of up to 1000 addresses, with
-     * at most `concurrency` chunks in flight. Keyed by address rather than
+     * Bogons are answered locally and cached answers are reused, and an address
+     * with a request already in flight, a lookup's or another batch's, awaits
+     * that request; everything else goes to the batch endpoint in chunks of up
+     * to 1000 addresses, with at most `concurrency` chunks in flight, and a
+     * lookup arriving meanwhile awaits this batch's answer for its address. Keyed by address rather than
      * positional, so duplicates in the input collapse to a single entry and the
      * caller never has to line two lists up. An address that fails carries its
      * error as its value, so one bad entry cannot lose the rest of the answers:
@@ -252,6 +266,12 @@ export class VPNDetection {
         const unique = [...new Set(ips)];
         const out = new Map<string, Result | VPNDetectionError>();
         const pending: string[] = [];
+        // Every address that is neither a bogon nor cached goes through
+        // `fetch()` in one synchronous pass: one with a request in flight joins
+        // it, and for the rest `fetchMethod` runs at once, which is how this
+        // batch learns the addresses it leads before building any chunk.
+        const shared: [string, Promise<Result | undefined>][] = [];
+        const led = new Map<string, PromiseWithResolvers<Result>>();
         for (const ip of unique) {
             if (isBogon(ip)) {
                 out.set(ip, bogonResult(ip));
@@ -262,7 +282,18 @@ export class VPNDetection {
                 out.set(ip, hit);
                 continue;
             }
-            pending.push(ip);
+            if (this.cache === null) {
+                pending.push(ip);
+                continue;
+            }
+            shared.push([ip, this.cache.fetch(ip, {
+                context: () => {
+                    const landing = Promise.withResolvers<Result>();
+                    led.set(ip, landing);
+                    pending.push(ip);
+                    return landing.promise;
+                },
+            })]);
         }
         // A per-call concurrency gets its own limiter; without one the call
         // would share the instance's budget and silently ignore the override.
@@ -271,11 +302,27 @@ export class VPNDetection {
         for (let i = 0; i < pending.length; i += BATCH_MAX) {
             chunks.push(pending.slice(i, i + BATCH_MAX));
         }
-        await Promise.all(chunks.map((chunk) => limit(async () => {
-            for (const [ip, answer] of await this.lookupChunk(chunk, options)) {
-                out.set(ip, answer);
-            }
-        })));
+        await Promise.all([
+            ...chunks.map((chunk) => limit(async () => {
+                for (const [ip, answer] of await this.lookupChunk(chunk, options)) {
+                    const landing = led.get(ip);
+                    if (landing === undefined) {
+                        out.set(ip, answer);
+                    } else if (answer instanceof VPNDetectionError) {
+                        landing.reject(answer);
+                    } else {
+                        landing.resolve(answer);
+                    }
+                }
+            })),
+            ...shared.map(async ([ip, answer]) => {
+                try {
+                    out.set(ip, (await answer)!);
+                } catch (err) {
+                    out.set(ip, asError(err));
+                }
+            }),
+        ]);
         // Reinstated in input order: chunks settle in completion order, and a
         // caller iterating the map should see what they passed in.
         return new Map(unique.map((ip) => [ip, out.get(ip)!]));
@@ -308,9 +355,8 @@ export class VPNDetection {
         for (const ip of chunk) {
             const served = body.results[ip];
             if (served !== undefined) {
-                const result = toResult(served);
-                this.cache?.set(ip, result);
-                out.set(ip, result);
+                // Cached by the `fetch()` this batch leads it through.
+                out.set(ip, toResult(served));
                 continue;
             }
             const failed = body.errors[ip];
