@@ -1,4 +1,4 @@
-# [<img src="https://s3.vpndetection.io/vpndetection-public/brand/mark.svg" alt="VPNDetection" width="24"/>](https://vpndetection.io/) VPNDetection Node.js Client Library
+# [<img src="https://s3.vpndetection.io/vpndetection-public/brand/mark.svg" alt="VPNDetection" height="28"/>](https://vpndetection.io/) VPNDetection Node.js Client Library
 
 [![npm](https://img.shields.io/npm/v/vpndetection.svg)](https://www.npmjs.com/package/vpndetection)
 [![license](https://img.shields.io/npm/l/vpndetection.svg)](LICENSE)
