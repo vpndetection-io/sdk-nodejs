@@ -1,7 +1,7 @@
 minimumReleaseAge: 10080
 # Nothing third-party belongs here. When npm serves a package without a `time`
 # field and the cooldown hard-fails (ERR_PNPM_MISSING_TIME), lower the window for
-# that one install and restore it - see docs/lib/pnpm.md. The lockfile then
+# that one install and restore it. The lockfile then
 # carries the resolution and --frozen-lockfile needs no exception.
 
 # @hey-api/json-schema-ref-parser pins js-yaml 4.2.0 exactly, which carries three
