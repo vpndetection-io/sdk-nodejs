@@ -43,6 +43,7 @@ export interface OauthMetadata {
     code_challenge_methods_supported?: string[];
     token_endpoint_auth_methods_supported?: string[];
     authorization_response_iss_parameter_supported?: boolean;
+    client_id_metadata_document_supported?: boolean;
     service_documentation?: string;
 }
 
@@ -247,6 +248,7 @@ const METADATA: Record<keyof OauthMetadata, Member> = {
     code_challenge_methods_supported: { type: 'string[]' },
     token_endpoint_auth_methods_supported: { type: 'string[]' },
     authorization_response_iss_parameter_supported: { type: 'boolean' },
+    client_id_metadata_document_supported: { type: 'boolean' },
     service_documentation: { type: 'string' },
 };
 

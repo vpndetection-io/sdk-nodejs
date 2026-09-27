@@ -39,10 +39,6 @@ const DEVICE = {
     expires_in: 900, interval: 5,
 };
 
-// In the corpus's production document, but no longer advertised or in the
-// pinned spec, so it is not a member of OauthMetadata.
-const NOT_A_MEMBER = new Set(['client_id_metadata_document_supported']);
-
 test('no OAuth request carries the API key', async () => {
     const { apiKey, forbiddenHeaders, forbiddenQuery } = corpus.noCredential;
     const stub = oauthStub([{ status: 200, body: EVERY_REQUIRED_MEMBER }]);
@@ -109,9 +105,7 @@ test('a 2xx decodes on presence: absent stays absent, an empty scope stays prese
                 const got = await callOauth(oauthClient(stub), operation, args);
 
                 for (const [name, value] of Object.entries(c.expect.present)) {
-                    if (!NOT_A_MEMBER.has(name)) {
-                        assert.deepEqual(got[name], value, name);
-                    }
+                    assert.deepEqual(got[name], value, name);
                 }
                 for (const name of c.expect.absent) {
                     assert.equal(Object.hasOwn(got, name), false, `${name} must be ABSENT`);
