@@ -24,6 +24,24 @@ export function unwrap<T>(res: Res): T {
  * same per-attempt semantics the Go and Python clients have. Aborting `cancel`
  * ends the attempt at once, rejecting with its reason.
  */
+// The longest delay setTimeout runs as asked. It runs anything longer, and
+// anything that is not a positive number, as 1 ms.
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
+/**
+ * Refuses a timeout no attempt can meet where it is set, on the client or the
+ * call, rather than failing every call as a timeout 1 ms in.
+ */
+export function checkTimeout(timeoutMs: number | undefined): number | undefined {
+    if (timeoutMs !== undefined
+        && !(typeof timeoutMs === 'number' && timeoutMs >= 1 && timeoutMs <= MAX_TIMEOUT_MS)) {
+        throw new VPNDetectionError(
+            'bad_request', `timeoutMs must be from 1 to ${MAX_TIMEOUT_MS} milliseconds, got ${String(timeoutMs)}`,
+        );
+    }
+    return timeoutMs;
+}
+
 export async function deadline<T>(
     timeoutMs: number, fn: (signal: AbortSignal) => Promise<T>, cancel?: AbortSignal,
 ): Promise<T> {

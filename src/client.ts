@@ -18,7 +18,7 @@ import type {
 import { bogonResult, isBogon } from './bogon.js';
 import { errorFromEntry, errorFromResponse, VPNDetectionError } from './errors.js';
 import { OauthApi } from './oauth.js';
-import { asError, deadline, unwrap, withRetry } from './transport.js';
+import { asError, checkTimeout, deadline, unwrap, withRetry } from './transport.js';
 import { DATABASE_FORMATS, toResult, type Result } from './types.js';
 
 /**
@@ -124,7 +124,9 @@ export class VPNDetection {
         // the same implementation a test substituted.
         const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
         this.client = createClient(createConfig({
-            baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
+            // Every path appended starts with a slash, and a second one is another
+            // path, which the API answers with a redirect.
+            baseUrl: (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, ''),
             ...(options.apiKey === undefined ? {} : { auth: bearerOnly(options.apiKey) }),
             fetch: fetchImpl,
         }));
@@ -140,7 +142,7 @@ export class VPNDetection {
         });
         this.limit = pLimit(options.concurrency ?? 8);
         this.retries = options.retries ?? 2;
-        this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+        this.timeoutMs = checkTimeout(options.timeoutMs) ?? DEFAULT_TIMEOUT_MS;
         this.database = new DatabaseApi(this.client, this.retries, this.timeoutMs, fetchImpl);
         this.oauth = new OauthApi(this.client, this.retries, this.timeoutMs);
     }
@@ -168,6 +170,8 @@ export class VPNDetection {
      * under the options of the call that led it.
      */
     async lookup(ip: string, options: LookupOptions = {}): Promise<Result> {
+        // First, or a bogon and a cached address would answer any value.
+        checkTimeout(options.timeoutMs);
         if (isBogon(ip)) {
             return bogonResult(ip);
         }
@@ -200,7 +204,7 @@ export class VPNDetection {
      * would otherwise be told where it used to be.
      */
     async myIp(options: LookupOptions = {}): Promise<Result> {
-        const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+        const timeoutMs = checkTimeout(options.timeoutMs) ?? this.timeoutMs;
         return withRetry(options.retries ?? this.retries, async () => {
             const res = await deadline(timeoutMs, (signal) => lookupMyIp({
                 client: this.client, signal: signal,
@@ -228,7 +232,7 @@ export class VPNDetection {
      * cached answer is a wrong one within seconds of the next request.
      */
     async myEntitlement(options: LookupOptions = {}): Promise<Entitlement> {
-        const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+        const timeoutMs = checkTimeout(options.timeoutMs) ?? this.timeoutMs;
         return withRetry(options.retries ?? this.retries, async () => {
             const res = await deadline(timeoutMs, (signal) => myEntitlement({
                 client: this.client, signal: signal,
@@ -263,6 +267,7 @@ export class VPNDetection {
                 'bad_request', `concurrency must be a whole number of at least 1, got ${concurrency}`,
             );
         }
+        checkTimeout(options.timeoutMs);
         const unique = [...new Set(ips)];
         const out = new Map<string, Result | VPNDetectionError>();
         const pending: string[] = [];
@@ -423,7 +428,7 @@ export class DatabaseApi {
      * and its absence answers nothing.
      */
     async downloads(options: DownloadsOptions = {}): Promise<Download[]> {
-        const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+        const timeoutMs = checkTimeout(options.timeoutMs) ?? this.timeoutMs;
         return withRetry(this.retries, async () => {
             const res = await deadline(timeoutMs, (signal) => listDownloads({
                 client: this.client,

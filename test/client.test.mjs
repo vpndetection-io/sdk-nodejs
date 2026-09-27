@@ -482,3 +482,91 @@ test('a client without a cache shares nothing', async () => {
 
     assert.equal(t.state.paths.length, 5);
 });
+
+// Answers every call the way its path expects and records the paths, so a
+// doubled slash shows up as a path rather than as whatever a server makes of it.
+function pathRecordingFetch() {
+    const paths = [];
+    const fn = async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        paths.push(path);
+        const body = path.endsWith('batch')
+            ? { results: { '9.9.9.9': { ip: '9.9.9.9', is_vpn: false } }, errors: {} }
+            : path.endsWith('oauth-authorization-server')
+                ? { issuer: 'x', authorization_endpoint: 'x', token_endpoint: 'x' }
+                : path.endsWith('list') ? [] : { ip: '8.8.8.8', is_vpn: false };
+        return new Response(JSON.stringify(body), {
+            status: 200, headers: { 'content-type': 'application/json' },
+        });
+    };
+    return { fetch: fn, paths: paths };
+}
+
+// Every path the client appends starts with a slash. One trailing slash on the
+// base URL was dropped, but through 5.3.0 a second doubled into every path
+// (//8.8.8.8, //batch), which the API answers with a redirect.
+test('every trailing slash on the base URL is dropped', async (t) => {
+    for (const suffix of ['/', '//', '///']) {
+        await t.test(JSON.stringify(suffix), async () => {
+            const stub = pathRecordingFetch();
+            const client = new VPNDetection({
+                baseUrl: `https://api.example.test${suffix}`, apiKey: 'k', fetch: stub.fetch, retries: 0,
+            });
+            await client.lookup('8.8.8.8');
+            await client.lookupBatch(['9.9.9.9']);
+            await client.myIp();
+            await client.database.list();
+            await client.oauth.metadata();
+            assert.deepEqual(stub.paths, [
+                '/8.8.8.8', '/batch', '/myip', '/api/v1/database/list', '/.well-known/oauth-authorization-server',
+            ]);
+        });
+    }
+});
+
+// setTimeout runs 0, a negative, NaN, Infinity and anything past 2^31 - 1 ms as
+// 1 ms, so through 5.3.0 each failed every call as a timeout 1 ms in. Refused
+// where set instead, per call before a bogon or a cached address can answer.
+const IMPOSSIBLE_TIMEOUTS = [0, -1, NaN, Infinity, 2 ** 31, '5000'];
+
+test('a timeout no attempt can meet is refused on the client', () => {
+    for (const timeoutMs of IMPOSSIBLE_TIMEOUTS) {
+        assert.throws(() => new VPNDetection({ timeoutMs: timeoutMs }),
+            (err) => err instanceof VPNDetectionError && err.kind === 'bad_request', String(timeoutMs));
+    }
+    for (const timeoutMs of [1, 2 ** 31 - 1]) {
+        assert.doesNotThrow(() => new VPNDetection({ timeoutMs: timeoutMs }), String(timeoutMs));
+    }
+});
+
+test('a timeout no attempt can meet is refused per call, before anything answers', async () => {
+    const stub = pathRecordingFetch();
+    const client = new VPNDetection({ apiKey: 'k', fetch: stub.fetch, retries: 0 });
+    await client.lookup('8.8.8.8');
+    const asked = stub.paths.length;
+    const calls = {
+        'a bogon': (o) => client.lookup('10.0.0.1', o),
+        'a cached address': (o) => client.lookup('8.8.8.8', o),
+        'a batch': (o) => client.lookupBatch(['10.0.0.1', '8.8.8.8'], o),
+        'myIp': (o) => client.myIp(o),
+        'myEntitlement': (o) => client.myEntitlement(o),
+        'downloads': (o) => client.database.downloads(o),
+        'metadata': (o) => client.oauth.metadata(o),
+        'revoke': (o) => client.oauth.revoke('vpndetection-cli', 'mo_rt_x', o),
+        'pollDeviceToken': (o) => client.oauth.pollDeviceToken('vpndetection-cli', {
+            device_code: 'mo_dc_x', user_code: 'x', verification_uri: 'x', expires_in: 900, interval: 2,
+        }, o),
+    };
+    // Before its first wait, not after sitting out the interval.
+    const started = performance.now();
+    await assert.rejects(calls.pollDeviceToken({ timeoutMs: 0 }), VPNDetectionError);
+    assert.ok(performance.now() - started < 1000, 'the poll waited before refusing');
+    for (const timeoutMs of IMPOSSIBLE_TIMEOUTS) {
+        for (const [name, call] of Object.entries(calls)) {
+            await assert.rejects(call({ timeoutMs: timeoutMs }),
+                (err) => err instanceof VPNDetectionError && err.kind === 'bad_request', `${name}: ${timeoutMs}`);
+        }
+    }
+    assert.equal(stub.paths.length, asked, 'a refused timeout sent a request');
+});
