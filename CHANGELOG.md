@@ -2,6 +2,13 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.3.2 - 2026-09-28
+
+### Fixes
+
+- Wait a Retry-After past setTimeout's ceiling on the backoff, with no warning ([`da08790`](https://github.com/vpndetection-io/sdk-nodejs/commit/da08790c0fef5d49c84731e2f22c1f85ba0f6979))
+- Judge an IPv4-mapped address as the IPv4 address it carries ([`fd611f3`](https://github.com/vpndetection-io/sdk-nodejs/commit/fd611f3432455ca2346e39352889f3e3908037d3))
+
 ## 5.3.1 - 2026-09-27
 
 ### Fixes
