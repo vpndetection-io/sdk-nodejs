@@ -15,7 +15,7 @@ import type {
     ListDatabasesResponses, ListDownloadsResponses, LookupResponse, BatchLookupResponse,
 } from './generated/types.gen.js';
 
-import { bogonResult, isBogon } from './bogon.js';
+import { bogonResult, isBogon, unmapped } from './bogon.js';
 import { errorFromEntry, errorFromResponse, VPNDetectionError } from './errors.js';
 import { OauthApi } from './oauth.js';
 import { asError, checkTimeout, deadline, unwrap, withRetry } from './transport.js';
@@ -167,18 +167,21 @@ export class VPNDetection {
      * else is served, then cached for this instance. Calls that miss the cache
      * while a request for their address is in flight, a batch's included, await
      * that request rather than sending their own, and take its answer, sent
-     * under the options of the call that led it.
+     * under the options of the call that led it. An IPv4-mapped address
+     * (`::ffff:8.8.8.8`) is the IPv4 address it carries: judged, sent and cached
+     * as that, so the answer names `8.8.8.8`.
      */
     async lookup(ip: string, options: LookupOptions = {}): Promise<Result> {
         // First, or a bogon and a cached address would answer any value.
         checkTimeout(options.timeoutMs);
-        if (isBogon(ip)) {
-            return bogonResult(ip);
+        const addr = unmapped(ip);
+        if (isBogon(addr)) {
+            return bogonResult(addr);
         }
         if (this.cache === null) {
-            return this.serve(ip, options);
+            return this.serve(addr, options);
         }
-        return (await this.cache.fetch(ip, { context: () => this.serve(ip, options) }))!;
+        return (await this.cache.fetch(addr, { context: () => this.serve(addr, options) }))!;
     }
 
     private async serve(ip: string, options: LookupOptions): Promise<Result> {
@@ -255,7 +258,8 @@ export class VPNDetection {
      * the API reports a per-entry failure with the status the single lookup
      * would have answered, and a chunk that fails as a whole marks every
      * address in it. A per-call `concurrency` below 1 is refused as
-     * `bad_request` before anything is sent.
+     * `bad_request` before anything is sent. An IPv4-mapped address is looked
+     * up as the IPv4 address it carries, and its answer keyed as you passed it.
      */
     async lookupBatch(
         ips: Iterable<string>, options: BatchOptions = {},
@@ -268,7 +272,8 @@ export class VPNDetection {
             );
         }
         checkTimeout(options.timeoutMs);
-        const unique = [...new Set(ips)];
+        const asked = [...new Set(ips)];
+        const unique = [...new Set(asked.map(unmapped))];
         const out = new Map<string, Result | VPNDetectionError>();
         const pending: string[] = [];
         // Every address that is neither a bogon nor cached goes through
@@ -328,9 +333,10 @@ export class VPNDetection {
                 }
             }),
         ]);
-        // Reinstated in input order: chunks settle in completion order, and a
-        // caller iterating the map should see what they passed in.
-        return new Map(unique.map((ip) => [ip, out.get(ip)!]));
+        // Reinstated in input order, under the addresses as passed: chunks
+        // settle in completion order, and a caller iterating the map should see
+        // what they passed in.
+        return new Map(asked.map((ip) => [ip, out.get(unmapped(ip))!]));
     }
 
     // One POST /batch, mapped back onto the addresses it was asked about. A

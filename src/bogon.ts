@@ -8,15 +8,35 @@ import type { Result } from './types.js';
  * IPv6 equivalents and the 6to4 and Teredo ranges that wrap them.
  *
  * These can never be VPN or proxy infrastructure, so the client answers them
- * itself and they never cost a request.
+ * itself and they never cost a request. An IPv4-mapped address
+ * (`::ffff:8.8.8.8`) is judged as the IPv4 address it carries.
  */
 export function isBogon(ip: string): boolean {
-    if (ip.includes(':')) {
-        const a = v6ToInt(ip);
+    const addr = unmapped(ip);
+    if (addr.includes(':')) {
+        const a = v6ToInt(addr);
         return a === null ? false : v6().some((r) => (a & r.mask) === r.net);
     }
-    const a = v4ToInt(ip);
+    const a = v4ToInt(addr);
     return a === null ? false : v4().some((r) => (a & r.mask) >>> 0 === r.net);
+}
+
+/**
+ * The IPv4 address an IPv4-mapped IPv6 address carries, dotted, and any other
+ * string as given. A server listening on `::` sees every IPv4 visitor in the
+ * mapped form, which is inside `::ffff:0:0/96` and so read whole would answer
+ * every one of them as a bogon, with no request made.
+ */
+export function unmapped(ip: string): string {
+    if (!ip.includes(':')) {
+        return ip;
+    }
+    const a = v6ToInt(ip);
+    if (a === null || a >> 32n !== 0xffffn) {
+        return ip;
+    }
+    const n = Number(a & 0xffffffffn);
+    return [n >>> 24, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff].join('.');
 }
 
 /**

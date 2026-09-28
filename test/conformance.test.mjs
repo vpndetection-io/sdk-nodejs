@@ -79,6 +79,40 @@ test('isBogon matches the canonical ranges', () => {
     }
 });
 
+// A server listening on :: sees every IPv4 visitor as ::ffff:a.b.c.d, which read
+// whole is inside ::ffff:0:0/96: through 5.3.1 each was answered as a bogon with
+// no request made, so a middleware there flagged no IPv4 visitor at all.
+test('an IPv4-mapped address is judged, sent and cached as the IPv4 address it carries', async () => {
+    for (const c of data.ipv4Mapped) {
+        assert.equal(isBogon(c.ip), c.expect, `${c.ip} (${c.why})`);
+        const routes = { [c.carries]: { body: { ip: c.carries, is_vpn: true } } };
+
+        const stub = stubFetch(routes);
+        const client = new VPNDetection({ fetch: stub.fetch });
+        const r = await client.lookup(c.ip);
+        assert.equal(r.isBogon, c.expect, c.ip);
+        assert.equal(r.ip, c.carries, c.ip);
+        await client.lookup(c.carries);
+        assert.deepEqual(stub.calls.map((u) => new URL(u).pathname), c.expect ? [] : [`/${c.carries}`], c.ip);
+
+        const sent = [];
+        const batchStub = stubFetch(routes);
+        const recording = async (input, init) => {
+            const url = typeof input === 'string' ? input : input.url;
+            if (new URL(url).pathname === '/batch') {
+                sent.push(...JSON.parse(await bodyOf(typeof input === 'string' ? input : input.clone(), init)).ips);
+            }
+            return batchStub.fetch(input, init);
+        };
+        const uncached = new VPNDetection({ fetch: recording, cache: false });
+        const asked = [...new Set([c.ip, c.carries])];
+        const batch = await uncached.lookupBatch(asked);
+        assert.deepEqual([...batch.keys()], asked, c.ip);
+        assert.equal(batch.get(c.ip).ip, c.carries, c.ip);
+        assert.deepEqual(sent, c.expect ? [] : [c.carries], c.ip);
+    }
+});
+
 test('a bogon is answered locally in the full max shape', async () => {
     const stub = stubFetch({});
     const c = new VPNDetection({ fetch: stub.fetch });

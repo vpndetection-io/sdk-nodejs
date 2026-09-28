@@ -167,6 +167,32 @@ test('a bogon client address warns once and never reaches the network', async ()
     assert.match(warnings[0], /not a public address/);
 });
 
+// A server listening on :: reports an IPv4 visitor as ::ffff:a.b.c.d. Through
+// 5.3.1 that form was a bogon, so every IPv4 visitor passed unlooked-up and
+// unblocked, with a warning blaming a proxy that was not there.
+test('an IPv4-mapped visitor is looked up and blocked as the IPv4 address it carries', async () => {
+    const paths = [];
+    const client = new VPNDetection({
+        cache: false,
+        fetch: async (input) => {
+            paths.push(new URL(typeof input === 'string' ? input : input.url).pathname);
+            return new Response(JSON.stringify({ ip: '45.83.91.1', is_vpn: true }), {
+                status: 200, headers: { 'content-type': 'application/json' },
+            });
+        },
+    });
+    const warnings = [];
+    const core = createCore(
+        { client: client, blockCondition: { isVpn: true }, onWarn: (m) => warnings.push(m) },
+        defaultIpSelector,
+    );
+    const out = await core.evaluate(req({}, '::ffff:45.83.91.1'));
+    assert.equal(out.blocked, true);
+    assert.equal(out.result.ip, '45.83.91.1');
+    assert.deepEqual(paths, ['/45.83.91.1']);
+    assert.deepEqual(warnings, []);
+});
+
 test('a missing member is warned about once, or thrown on request', async () => {
     const free = clientServing({ ip: '45.83.91.1', is_vpn: true });
     const warnings = [];
