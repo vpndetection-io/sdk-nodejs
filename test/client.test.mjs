@@ -570,3 +570,48 @@ test('a timeout no attempt can meet is refused per call, before anything answers
     }
     assert.equal(stub.paths.length, asked, 'a refused timeout sent a request');
 });
+
+// setTimeout runs a delay past 2^31 - 1 ms as 1 ms and prints a
+// TimeoutOverflowWarning, which through 5.3.1 is how a Retry-After of 2147484 s
+// or more was waited: on the caller's stderr, once per retry, from the API and
+// object storage alike. The backoff alone waits it now, still a throttle.
+test('a Retry-After past what setTimeout holds waits the backoff, with no warning', async (t) => {
+    const warnings = timeoutWarnings(t);
+    const paths = [];
+    const fetch = async (input) => {
+        const url = new URL(typeof input === 'string' ? input : input.url);
+        paths.push(url.pathname);
+        if (url.pathname === '/api/v1/database/download') {
+            return new Response(null, { status: 302, headers: { location: 'https://storage.invalid/blob' } });
+        }
+        if (paths.filter((p) => p === url.pathname).length === 1) {
+            return new Response(JSON.stringify({ error: 'rate limit exceeded' }), {
+                status: 429, headers: { 'content-type': 'application/json', 'retry-after': '2147484' },
+            });
+        }
+        if (url.pathname === '/blob') {
+            return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+        }
+        return new Response(JSON.stringify({ ip: '9.9.9.9', is_vpn: false }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+        });
+    };
+    const client = new VPNDetection({ fetch: fetch, retries: 1, cache: false });
+
+    assert.equal((await client.lookup('9.9.9.9')).ip, '9.9.9.9');
+    assert.deepEqual(await client.database.downloadBytes('cdn_ip_v1', 'csvgz'), new Uint8Array([1, 2, 3]));
+    assert.deepEqual(paths, ['/9.9.9.9', '/9.9.9.9', '/api/v1/database/download', '/blob', '/blob']);
+    assert.deepEqual(warnings, []);
+});
+
+function timeoutWarnings(t) {
+    const seen = [];
+    const listener = (warning) => {
+        if (warning.name === 'TimeoutOverflowWarning') {
+            seen.push(warning.message);
+        }
+    };
+    process.on('warning', listener);
+    t.after(() => process.off('warning', listener));
+    return seen;
+}

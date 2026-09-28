@@ -7,7 +7,9 @@ import type { TokenRequest } from './generated/types.gen.js';
 import {
     errorFromResponse, OauthError, oauthErrorFrom, OauthExpiredTokenError, VPNDetectionError,
 } from './errors.js';
-import { asError, checkTimeout, deadline, withRetry, type Res } from './transport.js';
+import {
+    asError, checkTimeout, deadline, MAX_TIMEOUT_MS, withRetry, type Res,
+} from './transport.js';
 
 /** Per-call overrides for one OAuth request. Anything omitted falls back to the client's setting. */
 export interface OauthOptions {
@@ -345,12 +347,12 @@ function hasType(value: unknown, type: Member['type']): boolean {
     return typeof value === type;
 }
 
-// setTimeout runs anything past 2^31 - 1 ms as 1 ms, so a longer wait is taken
-// in parts; a poll under a huge interval would otherwise ask back to back.
+// setTimeout runs anything past MAX_TIMEOUT_MS as 1 ms, so a longer wait is
+// taken in parts; a poll under a huge interval would otherwise ask back to back.
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     let left = ms;
     do {
-        const part = Math.min(left, 2 ** 31 - 1);
+        const part = Math.min(left, MAX_TIMEOUT_MS);
         await sleepFor(part, signal);
         left -= part;
     } while (left > 0);
