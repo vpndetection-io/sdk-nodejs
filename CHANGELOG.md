@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.3.3 - 2026-09-29
+
+### Fixes
+
+- Recognize 26 more reserved ranges as bogons, as the API does ([`5e3139a`](https://github.com/vpndetection-io/sdk-nodejs/commit/5e3139a6e6bfca2737f65ff876f412da13ab4a11))
+
 ## 5.3.2 - 2026-09-28
 
 ### Fixes
