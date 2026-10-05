@@ -211,6 +211,24 @@ const keyed = new VPNDetection({ apiKey: token.apikey });
 
 A denied sign-in rejects with `OauthAccessDeniedError` and a code that ran out with `OauthExpiredTokenError`. Client IDs are issued on request from support@vpndetection.io, and `client.oauth.revoke('your-client-id', token.refresh_token)` signs the machine out again.
 
+### Sign in with OAuth (authorization code)
+
+An app that can take a browser redirect signs the person in there instead, with a PKCE pair made for that one sign-in:
+
+```js
+const client = new VPNDetection();
+const redirectUri = 'http://127.0.0.1:8765/callback';
+const pkce = client.oauth.createPkce();
+
+const url = client.oauth.authorizationUrl('your-client-id', redirectUri, pkce.challenge, {
+    scope: 'apikeys.use', state: 'your-state',
+});
+// Open url in the browser. Its redirect to redirectUri carries code and state.
+const token = await client.oauth.exchangeAuthorizationCode('your-client-id', code, pkce.verifier, redirectUri);
+```
+
+Check that `state` came back as you sent it before you exchange `code`, which works once. The client ID can also be the https URL of a client metadata document your app serves, and such an app is never handed a key, so `token.apikey` stays absent.
+
 ### Absent is not false
 
 Only `ip` and `isVpn` come back on every plan. A field your plan does not include is `undefined`, which means "not in your plan" rather than "checked, and no".

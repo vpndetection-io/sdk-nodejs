@@ -1,5 +1,5 @@
-// The OAuth accessor against the shared corpus's oauth section. Nothing here
-// reads oauth.deferred: those operations are not in this release.
+// The OAuth accessor against the shared corpus's oauth section, the
+// authorization code flow's vectors under oauth.deferred included.
 //
 // Runs against dist/, which is what actually ships.
 
@@ -49,10 +49,13 @@ test('no OAuth request carries the API key', async () => {
     await client.oauth.metadata();
     await client.oauth.exchangeDeviceCode('vpndetection-cli', 'mo_dc_x');
     await client.oauth.exchangeRefreshToken('vpndetection-cli', 'mo_rt_x');
+    await client.oauth.exchangeAuthorizationCode('vpndetection-cli', 'mo_ac_x', 'v'.repeat(43), 'http://127.0.0.1/cb');
     await client.oauth.revoke('vpndetection-cli', 'mo_rt_x');
     assertNotError(await settle(client.oauth.pollDeviceToken('vpndetection-cli', device), stub.bound));
 
-    assert.equal(stub.requests.length, 6);
+    assert.equal(stub.requests.length, 7);
+    const url = client.oauth.authorizationUrl('vpndetection-cli', 'http://127.0.0.1/cb', 'c'.repeat(43));
+    assert.equal(url.includes(apiKey), false, 'the authorization URL carried the API key');
     for (const req of stub.requests) {
         const label = `${req.method} ${req.path}`;
         for (const name of forbiddenHeaders) {
@@ -78,7 +81,7 @@ test('each operation requests its endpoint with exactly its form fields', async 
         assertEndpoint(stub.requests[0], corpus.endpoints.metadata);
         assert.equal(stub.requests[0].url, `${BASE_URL}${corpus.endpoints.metadata.path}`);
     });
-    for (const c of corpus.forms.cases) {
+    for (const c of [...corpus.forms.cases, ...corpus.deferred.forms]) {
         await t.test(c.name, async () => {
             const stub = oauthStub([{ status: 200, body: EVERY_REQUIRED_MEMBER }]);
             await callOauth(oauthClient(stub), c.operation, c.args, { timeoutMs: 5000 });
@@ -179,7 +182,7 @@ test('a failed answer is an OAuth refusal only when it is one', async (t) => {
 });
 
 test('only what consumes nothing is retried, and never an OAuth refusal', async (t) => {
-    for (const c of corpus.retries.cases) {
+    for (const c of [...corpus.retries.cases, ...corpus.deferred.retries]) {
         await t.test(c.name, async () => {
             const stub = oauthStub(c.responses);
             const outcome = await settle(callOauth(oauthClient(stub), c.operation, c.args), stub.bound);
@@ -192,6 +195,44 @@ test('only what consumes nothing is retried, and never an OAuth refusal', async 
             assertOutcome(outcome, { ...c.expect, type: c.expect.outcome }, c.name);
         });
     }
+});
+
+test('an authorization URL is built exactly as the corpus spells it, with no request', async (t) => {
+    for (const c of corpus.deferred.authorizationUrl) {
+        await t.test(c.name, async () => {
+            const stub = oauthStub([{ status: 200, body: EVERY_REQUIRED_MEMBER }]);
+            const url = oauthClient(stub, { baseUrl: c.baseUrl }).oauth.authorizationUrl(
+                c.clientId, c.redirectUri, c.codeChallenge,
+                { scope: c.scope, state: c.state, resource: c.resource },
+            );
+            assert.equal(url, c.expect);
+            assert.equal(stub.requests.length, 0, 'requests sent');
+        });
+    }
+    await t.test('an option given empty is left out, and a required value never is', () => {
+        const oauth = new VPNDetection({ baseUrl: BASE_URL }).oauth;
+        const required = corpus.deferred.authorizationUrl[0];
+        assert.equal(
+            oauth.authorizationUrl(required.clientId, required.redirectUri, required.codeChallenge,
+                { scope: '', state: '', resource: '' }),
+            required.expect.replace(required.baseUrl, BASE_URL),
+        );
+        assert.throws(() => oauth.authorizationUrl('', required.redirectUri, required.codeChallenge),
+            (err) => err instanceof VPNDetectionError && err.kind === 'bad_request');
+        assert.throws(() => oauth.authorizationUrl(required.clientId, required.redirectUri, '\ud800'),
+            (err) => err instanceof VPNDetectionError && err.kind === 'bad_request');
+    });
+});
+
+test('a PKCE pair is fresh, and its challenge is the S256 one', () => {
+    const { pkce } = corpus.deferred;
+    const oauth = new VPNDetection().oauth;
+    assert.equal(oauth.pkceChallenge(pkce.verifier), pkce.challenge);
+    const first = oauth.createPkce();
+    assert.match(first.verifier, new RegExp(pkce.generatedVerifierPattern));
+    assert.equal(first.challenge, oauth.pkceChallenge(first.verifier));
+    assert.equal(first.method, pkce.method);
+    assert.notEqual(oauth.createPkce().verifier, first.verifier, 'two pairs share a verifier');
 });
 
 // Waits are asserted exactly, through the seam that replaces the sleep AND the
@@ -377,6 +418,10 @@ function callOauth(client, operation, args, options = {}) {
             return client.oauth.exchangeDeviceCode(args.clientId, args.deviceCode, options);
         case 'exchangeRefreshToken':
             return client.oauth.exchangeRefreshToken(args.clientId, args.refreshToken, options);
+        case 'exchangeAuthorizationCode':
+            return client.oauth.exchangeAuthorizationCode(
+                args.clientId, args.code, args.codeVerifier, args.redirectUri, options,
+            );
         case 'revoke':
             return client.oauth.revoke(args.clientId, args.token, options);
         default:

@@ -1,3 +1,5 @@
+import { createHash, randomBytes } from 'node:crypto';
+
 import type { Client } from './generated/client/index.js';
 import {
     oauthDeviceAuthorization, oauthMetadata, oauthRevoke, oauthToken,
@@ -23,6 +25,26 @@ export interface DeviceAuthorizationOptions extends OauthOptions {
     scope?: string;
     /** The API the tokens are meant for. */
     resource?: string;
+}
+
+/** What an authorization URL asks for beyond what every one carries. A member left out is left out. */
+export interface AuthorizationUrlOptions {
+    /** Space-delimited scopes, sent as given. The server narrows them to what the client may ask for. */
+    scope?: string;
+    /** Comes back on the redirect unchanged, so the caller can tell the answer is to its own request. */
+    state?: string;
+    /** The API the tokens are meant for. */
+    resource?: string;
+}
+
+/** One sign-in's PKCE pair: `challenge` goes in the authorization URL, `verifier` to the exchange. */
+export interface Pkce {
+    /** 32 random bytes as 43 characters of unpadded base64url, sent only to the exchange. */
+    verifier: string;
+    /** The verifier's SHA-256, as unpadded base64url. */
+    challenge: string;
+    /** `S256`, the only method the server accepts. */
+    method: 'S256';
 }
 
 export interface PollDeviceTokenOptions {
@@ -83,7 +105,8 @@ export interface TokenResponse {
 /**
  * Signs a person in on their own machine with the OAuth device flow, so a
  * program can be handed one of their API keys instead of asking them to paste
- * it. Reached through `client.oauth`.
+ * it, or through a browser redirect with the authorization code flow. Reached
+ * through `client.oauth`.
  *
  * Every call takes a client ID, issued on request from support@vpndetection.io.
  * None of these requests carries the client's API key, and none needs one.
@@ -157,6 +180,62 @@ export class OauthApi {
         return this.exchange({
             grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId,
         }, options.timeoutMs);
+    }
+
+    /**
+     * Trade the `code` a sign-in's redirect brought back for tokens.
+     * `codeVerifier` is the PKCE verifier whose challenge went into the
+     * authorization URL, and `redirectUri` that URL's, exactly.
+     *
+     * Never retried: the server spends the code on first read, before it checks
+     * the verifier, so a retry could only be refused.
+     */
+    async exchangeAuthorizationCode(
+        clientId: string, code: string, codeVerifier: string, redirectUri: string,
+        options: OauthOptions = {},
+    ): Promise<TokenResponse> {
+        return this.exchange({
+            grant_type: 'authorization_code', code: code, redirect_uri: redirectUri,
+            client_id: clientId, code_verifier: codeVerifier,
+        }, options.timeoutMs);
+    }
+
+    /**
+     * The URL to open in the person's browser for the authorization code flow.
+     * Makes no request. Once they decide, the server redirects to `redirectUri`
+     * with a `code` for `exchangeAuthorizationCode` (and `state`, when one was
+     * given), or with an `error`.
+     */
+    authorizationUrl(
+        clientId: string, redirectUri: string, codeChallenge: string,
+        options: AuthorizationUrlOptions = {},
+    ): string {
+        const params: [string, string | undefined][] = [
+            ['response_type', 'code'],
+            ['client_id', clientId],
+            ['redirect_uri', redirectUri],
+            ['code_challenge', codeChallenge],
+            ['code_challenge_method', 'S256'],
+            ['scope', options.scope || undefined],
+            ['state', options.state || undefined],
+            ['resource', options.resource || undefined],
+        ];
+        const query = params
+            .filter((param): param is [string, string] => param[1] !== undefined)
+            .map(([name, value]) => `${name}=${percentEncode(name, value)}`)
+            .join('&');
+        return `${this.client.getConfig().baseUrl ?? ''}/oauth/authorize?${query}`;
+    }
+
+    /** A fresh PKCE pair for one sign-in, from the system's secure random source. */
+    createPkce(): Pkce {
+        const verifier = randomBytes(32).toString('base64url');
+        return { verifier: verifier, challenge: challengeFor(verifier), method: 'S256' };
+    }
+
+    /** The `S256` challenge for a PKCE verifier: its SHA-256, as unpadded base64url. */
+    pkceChallenge(verifier: string): string {
+        return challengeFor(verifier);
     }
 
     /**
@@ -236,6 +315,25 @@ export class OauthApi {
 }
 
 const DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
+
+function challengeFor(verifier: string): string {
+    return createHash('sha256').update(verifier).digest('base64url');
+}
+
+// Every byte of the value's UTF-8 as %XX but A-Z a-z 0-9 - . _ ~, so a space is
+// %20 and never +. encodeURIComponent alone leaves ! ' ( ) * as they are, and
+// throws a URIError on a lone surrogate, which has no UTF-8 at all.
+function percentEncode(name: string, value: string): string {
+    if (typeof value !== 'string' || value === '') {
+        throw new VPNDetectionError('bad_request', `${name} must be a non-empty string`);
+    }
+    try {
+        return encodeURIComponent(value)
+            .replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    } catch {
+        throw new VPNDetectionError('bad_request', `${name} is not valid UTF-16, so it has no UTF-8 to send`);
+    }
+}
 
 interface Clock {
     now(): number;
