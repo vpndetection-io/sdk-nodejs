@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.4.0 - 2026-10-05
+
+### Features
+
+- Add the authorization code sign-in, with PKCE ([`1204380`](https://github.com/vpndetection-io/sdk-nodejs/commit/1204380bd4bb2229a6bb119102315ec6376d99a3))
+
 ## 5.3.4 - 2026-10-04
 
 ### Fixes
