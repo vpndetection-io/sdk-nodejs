@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.5.1 - 2026-10-10
+
+### Fixes
+
+- Re-pin the spec to 2026.10.09: rotating a key needs apikeys.reveal ([`45b34cf`](https://github.com/vpndetection-io/sdk-nodejs/commit/45b34cff54c9c1be60a0b0f6432845c99fac9223))
+
 ## 5.5.0 - 2026-10-10
 
 ### Features
