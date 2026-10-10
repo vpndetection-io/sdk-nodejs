@@ -85,7 +85,12 @@ export async function withRetry<T>(retries: number, fn: () => Promise<T>): Promi
         return await pRetry(fn, {
             retries: retries,
             shouldRetry: ({ error }) => !(error instanceof VPNDetectionError) || error.retryable,
-            onFailedAttempt: async ({ error }) => {
+            onFailedAttempt: async ({ error, retriesLeft }) => {
+                // p-retry runs this hook before it checks retriesLeft, so with no
+                // retry left a wait here would only delay the failure.
+                if (retriesLeft <= 0) {
+                    return;
+                }
                 const seconds = error instanceof VPNDetectionError ? error.retryAfterSeconds : undefined;
                 if (seconds !== undefined && seconds > 0 && seconds * 1000 <= MAX_TIMEOUT_MS) {
                     await new Promise((r) => setTimeout(r, seconds * 1000));

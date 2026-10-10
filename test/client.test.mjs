@@ -604,6 +604,24 @@ test('a Retry-After past what setTimeout holds waits the backoff, with no warnin
     assert.deepEqual(warnings, []);
 });
 
+// p-retry calls onFailedAttempt before it checks retriesLeft, so through 5.4.0
+// a 429's Retry-After was waited out even after the last attempt, and only
+// then did the call fail.
+test('a Retry-After is not waited out when no retry follows', async () => {
+    const fetch = async () => new Response(JSON.stringify({ error: 'rate limit exceeded' }), {
+        status: 429, headers: { 'content-type': 'application/json', 'retry-after': '3' },
+    });
+    // One retry waits the header once, then p-retry's own 1 s backoff.
+    for (const [retries, least, most] of [[0, 0, 1000], [1, 3000, 6000]]) {
+        const client = new VPNDetection({ fetch: fetch, cache: false, retries: retries });
+        const started = Date.now();
+        await assert.rejects(client.lookup('9.9.9.9'), (err) => err.kind === 'rate_limited');
+        const elapsed = Date.now() - started;
+        assert.ok(elapsed >= least && elapsed < most,
+            `retries ${retries} failed after ${elapsed} ms, want ${least} to ${most} ms`);
+    }
+});
+
 function timeoutWarnings(t) {
     const seen = [];
     const listener = (warning) => {
