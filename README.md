@@ -229,6 +229,8 @@ const token = await client.oauth.exchangeAuthorizationCode('your-client-id', cod
 
 Check that `state` came back as you sent it before you exchange `code`, which works once. The client ID can also be the https URL of a client metadata document your app serves, and such an app is never handed a key, so `token.apikey` stays absent.
 
+`createPkce` and `pkceChallenge` hash with `node:crypto`, so they need Node.js 22.3 or newer. They and `database.download` are the only calls that need Node.js: the rest of the client, and `vpndetection/middleware`, run on an Edge runtime too.
+
 ### Absent is not false
 
 Only `ip` and `isVpn` come back on every plan. A field your plan does not include is `undefined`, which means "not in your plan" rather than "checked, and no".
