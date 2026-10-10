@@ -235,6 +235,20 @@ test('a PKCE pair is fresh, and its challenge is the S256 one', () => {
     assert.notEqual(oauth.createPkce().verifier, first.verifier, 'two pairs share a verifier');
 });
 
+// An Edge runtime has no node:crypto, and PKCE's two calls cannot wait for Web
+// Crypto's digest, so they say what is missing rather than fail with a TypeError.
+test('PKCE refuses a runtime without node:crypto', (t) => {
+    const getBuiltinModule = process.getBuiltinModule;
+    process.getBuiltinModule = undefined;
+    t.after(() => {
+        process.getBuiltinModule = getBuiltinModule;
+    });
+    const oauth = new VPNDetection().oauth;
+    for (const call of [() => oauth.createPkce(), () => oauth.pkceChallenge('verifier')]) {
+        assert.throws(call, (err) => err instanceof VPNDetectionError && err.kind === 'bad_request');
+    }
+});
+
 // Waits are asserted exactly, through the seam that replaces the sleep AND the
 // clock together, so the deadline reads the same time the waits spent.
 test('pollDeviceToken waits, widens and ends as the corpus says', async (t) => {

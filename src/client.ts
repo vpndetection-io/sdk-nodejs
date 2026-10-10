@@ -16,6 +16,7 @@ import type {
 } from './generated/types.gen.js';
 
 import { bogonResult, isBogon, unmapped } from './bogon.js';
+import { loadNodeBuiltin } from './builtin.js';
 import { errorFromEntry, errorFromResponse, VPNDetectionError } from './errors.js';
 import { OauthApi } from './oauth.js';
 import { asError, checkTimeout, deadline, unwrap, withRetry } from './transport.js';
@@ -501,8 +502,8 @@ export class DatabaseApi {
                 'server_error', 'object storage answered with no body', res.status,
             );
         }
-        const { Readable } = await import('node:stream');
-        const { pipeline } = await import('node:stream/promises');
+        const { Readable } = await loadNodeBuiltin<typeof import('node:stream')>('node:stream');
+        const { pipeline } = await loadNodeBuiltin<typeof import('node:stream/promises')>('node:stream/promises');
         // `node:stream/web` and the DOM lib declare the same runtime object as
         // two unrelated types, so `fromWeb` needs it restated.
         const source = Readable.fromWeb(res.body as unknown as WebReadableStream<Uint8Array>);
@@ -519,8 +520,8 @@ export class DatabaseApi {
             await pipeline(counted(), destination);
             return bytes;
         }
-        const { createWriteStream } = await import('node:fs');
-        const { rename, unlink } = await import('node:fs/promises');
+        const { createWriteStream } = await loadNodeBuiltin<typeof import('node:fs')>('node:fs');
+        const { rename, unlink } = await loadNodeBuiltin<typeof import('node:fs/promises')>('node:fs/promises');
         const partial = `${destination}.part`;
         try {
             await pipeline(counted(), createWriteStream(partial));

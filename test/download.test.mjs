@@ -113,6 +113,24 @@ test('download follows the 302 and writes the file', async (t) => {
     assert.deepEqual(o.seen.map((r) => r.path), ['/api/v1/database/download', '/blob']);
 });
 
+// A Node older than 22.3 has no process.getBuiltinModule, and gets node:fs and
+// node:stream through an import instead.
+test('download writes the file on a Node without getBuiltinModule', async (t) => {
+    const o = await start();
+    t.after(() => o.server.close());
+    const getBuiltinModule = process.getBuiltinModule;
+    process.getBuiltinModule = undefined;
+    t.after(() => {
+        process.getBuiltinModule = getBuiltinModule;
+    });
+    const dest = join(tmp, 'no-getbuiltinmodule.csv.gz');
+
+    const bytes = await o.client.database.download('cdn_ip_v1', 'csvgz', dest);
+
+    assert.equal(bytes, SMALL.length);
+    assert.deepEqual(readFileSync(dest), SMALL);
+});
+
 test('download accepts a writable stream', async (t) => {
     const o = await start();
     t.after(() => o.server.close());

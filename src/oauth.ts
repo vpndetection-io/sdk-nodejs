@@ -1,5 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
-
+import { nodeBuiltin } from './builtin.js';
 import type { Client } from './generated/client/index.js';
 import {
     oauthDeviceAuthorization, oauthMetadata, oauthRevoke, oauthToken,
@@ -229,7 +228,7 @@ export class OauthApi {
 
     /** A fresh PKCE pair for one sign-in, from the system's secure random source. */
     createPkce(): Pkce {
-        const verifier = randomBytes(32).toString('base64url');
+        const verifier = nodeCrypto().randomBytes(32).toString('base64url');
         return { verifier: verifier, challenge: challengeFor(verifier), method: 'S256' };
     }
 
@@ -317,7 +316,17 @@ export class OauthApi {
 const DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 
 function challengeFor(verifier: string): string {
-    return createHash('sha256').update(verifier).digest('base64url');
+    return nodeCrypto().createHash('sha256').update(verifier).digest('base64url');
+}
+
+function nodeCrypto(): typeof import('node:crypto') {
+    const crypto = nodeBuiltin<typeof import('node:crypto')>('node:crypto');
+    if (crypto === undefined) {
+        throw new VPNDetectionError(
+            'bad_request', 'PKCE needs node:crypto, which this runtime lacks: use Node.js 22.3 or newer',
+        );
+    }
+    return crypto;
 }
 
 // Every byte of the value's UTF-8 as %XX but A-Z a-z 0-9 - . _ ~, so a space is
