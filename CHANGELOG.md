@@ -2,6 +2,16 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.5.0 - 2026-10-10
+
+### Features
+
+- Build for an Edge runtime: import no Node.js builtin ([`3030261`](https://github.com/vpndetection-io/sdk-nodejs/commit/3030261113476be82f208b26a27b3a7ec6a5a557))
+
+### Fixes
+
+- Wait out no Retry-After when no retry follows ([`c89ef62`](https://github.com/vpndetection-io/sdk-nodejs/commit/c89ef622af35f90ad5138db789e820296c698880))
+
 ## 5.4.0 - 2026-10-05
 
 ### Features
