@@ -2,6 +2,14 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.5.2 - 2026-10-12
+
+### Fixes
+
+- Read a Retry-After as seconds or an HTTP date, and nothing else ([`114f095`](https://github.com/vpndetection-io/sdk-nodejs/commit/114f09506ee53c7ab6176d4f10a92aebd53c2c3f))
+- Retry a 2xx a call cannot read, as a server_error with its status ([`600ea45`](https://github.com/vpndetection-io/sdk-nodejs/commit/600ea4534c0c70f562572205d1316a6854e0df96))
+- Send the API key trimmed, none for blanks, and refuse a control character ([`84b1189`](https://github.com/vpndetection-io/sdk-nodejs/commit/84b118934b49398b83070e615189ac8f3e129742))
+
 ## 5.5.1 - 2026-10-10
 
 ### Fixes
