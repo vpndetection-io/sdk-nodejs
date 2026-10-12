@@ -49,6 +49,116 @@ const CALLS = {
     downloads: [(c) => c.database.downloads(), '{"downloads":"x"}', '{"downloads":[{}]}'],
 };
 
+test('a 2xx a call cannot read is a retried server_error carrying its status', async () => {
+    for (const [name, [call, wrongType, noMembers]] of Object.entries(CALLS)) {
+        const replies = {
+            html: body('<html><body>Bad gateway</body></html>', 'text/html'),
+            cut: cutOff(),
+            empty: body(''),
+            null: body('null'),
+            array: body('[]'),
+            object: body('{}'),
+            wrongType: body(wrongType),
+            noMembers: body(noMembers),
+        };
+        // Concurrently, since each sits out the retries' backoff.
+        await Promise.all(Object.entries(replies).map(async ([kind, reply]) => {
+            const c = rawClient(reply);
+            await assert.rejects(() => call(c.client), (err) => {
+                assert.equal(err.kind, 'server_error', `${name} ${kind}: ${err.message}`);
+                assert.equal(err.status, 200, `${name} ${kind}`);
+                return true;
+            });
+            assert.equal(c.calls.length, 3, `${name} ${kind} is retried`);
+        }));
+    }
+});
+
+test('a batch chunk it cannot read is retried, and fails every address with the status', async () => {
+    const replies = {
+        html: body('<html><body>Bad gateway</body></html>', 'text/html'),
+        cut: cutOff(),
+        empty: body(''),
+        null: body('null'),
+        array: body('[]'),
+        object: body('{}'),
+        noErrors: body(`{"results":{"${IP}":{"ip":"${IP}","is_vpn":false}}}`),
+        wrongType: body('{"results":[],"errors":{}}'),
+    };
+    await Promise.all(Object.entries(replies).map(async ([kind, reply]) => {
+        const c = rawClient(reply);
+        const out = await c.client.lookupBatch([IP, OTHER]);
+        for (const ip of [IP, OTHER]) {
+            assert.equal(out.get(ip).kind, 'server_error', `${kind} ${ip}: ${out.get(ip).message}`);
+            assert.equal(out.get(ip).status, 200, `${kind} ${ip}`);
+        }
+        assert.equal(c.calls.length, 3, `${kind} is retried`);
+    }));
+});
+
+test('one batch entry it cannot read is that address error alone', async () => {
+    for (const entry of [{}, [], 'x', { ip: OTHER }]) {
+        for (const map of ['results', 'errors']) {
+            const answer = { results: { [IP]: { ip: IP, is_vpn: true } }, errors: {} };
+            answer[map][OTHER] = entry;
+            const c = rawClient(body(JSON.stringify(answer)));
+            const out = await c.client.lookupBatch([IP, OTHER]);
+            assert.equal(out.get(IP).isVpn, true, `${map} ${JSON.stringify(entry)}`);
+            assert.equal(out.get(OTHER).kind, "server_error", `${map} ${JSON.stringify(entry)}`);
+            assert.equal(out.get(OTHER).status, 200, `${map} ${entry}`);
+            assert.equal(c.calls.length, 1, `${map} ${entry} is not retried for one entry`);
+        }
+    }
+});
+
+test('a readable answer still comes back', async () => {
+    let c = rawClient(body(`{"ip":"${IP}","is_vpn":true}`));
+    assert.equal((await c.client.lookup(IP)).isVpn, true);
+    const entitlement = {
+        org_id: 'o', apikey: { id: 'k', expires: null, allowed_cidrs: [] }, plan: { key: 'max', tier: 'max' },
+        usage: { requests: 1, quota: 10, hard_limit: null, window_start: 's', window_end: 'e' },
+    };
+    c = rawClient(body(JSON.stringify(entitlement)));
+    assert.deepEqual(await c.client.myEntitlement(), entitlement);
+    const database = {
+        base: 'vpn_ip', name: 'n', summary: 's', license_type: null, starts: null, expires: null, renews_at: null,
+        notice_due_at: null, in_term: false, standing: 'available', versions: [{ id: 'vpn_ip_v1', version: 1,
+            formats: [{ format: 'mmdb', bytes: null }] }],
+    };
+    c = rawClient(body(JSON.stringify({ databases: [database] })));
+    assert.deepEqual(await c.client.database.list(), [database]);
+    c = rawClient(body(`{"results":{"${IP}":{"ip":"${IP}","is_vpn":true}},"errors":{"${OTHER}":{"status":429,"error":"spent"}}}`));
+    const out = await c.client.lookupBatch([IP, OTHER]);
+    assert.equal(out.get(IP).isVpn, true);
+    assert.equal(out.get(OTHER).kind, 'quota_exceeded');
+    assert.equal(c.calls.length, 1);
+});
+
+// The lists are hand-written, so a member the spec makes required, and never null,
+// must not be able to go unchecked: read the generated types and compare.
+test('each checked member list is every required member of its generated type', async () => {
+    const shapes = await import('../dist/shapes.js');
+    const types = readFileSync(new URL('../src/generated/types.gen.ts', import.meta.url), 'utf8');
+    const required = (name) => {
+        const block = types.split(`export type ${name} = {\n`)[1].split('\n};')[0];
+        return [...block.matchAll(/^ {4}([a-z][a-z0-9_]*): (.*)$/gm)]
+            .filter((m) => !/\| null;$/.test(m[2])).map((m) => m[1]).sort();
+    };
+    assert.deepEqual([...shapes.LOOKUP_MEMBERS].sort(), required('LookupResponse'));
+    assert.deepEqual([...shapes.BATCH_MEMBERS].sort(), required('BatchLookupResponse'));
+    assert.deepEqual([...shapes.BATCH_ERROR_MEMBERS].sort(), required('BatchLookupError'));
+    assert.deepEqual([...shapes.ENTITLEMENT_MEMBERS].sort(), required('Entitlement'));
+    assert.deepEqual([...shapes.ENTITLEMENT_APIKEY_MEMBERS].sort(), required('EntitlementApikey'));
+    assert.deepEqual([...shapes.ENTITLEMENT_PLAN_MEMBERS].sort(), required('EntitlementPlan'));
+    assert.deepEqual([...shapes.ENTITLEMENT_USAGE_MEMBERS].sort(), required('EntitlementUsage'));
+    assert.deepEqual([...shapes.DATABASE_MEMBERS].sort(), required('Database'));
+    assert.deepEqual([...shapes.DATABASE_VERSION_MEMBERS].sort(), required('DatabaseVersion'));
+    assert.deepEqual([...shapes.DATABASE_FORMAT_SIZE_MEMBERS].sort(), required('DatabaseFormatSize'));
+    assert.deepEqual([...shapes.DATABASE_METADATA_MEMBERS].sort(), required('DatabaseMetadata'));
+    assert.deepEqual([...shapes.DB_CHECKSUMS_MEMBERS].sort(), required('DbChecksums'));
+    assert.deepEqual([...shapes.DOWNLOAD_MEMBERS].sort(), required('Download'));
+});
+
 // Digits, or one of RFC 9110's three date forms in GMT, and nothing else.
 test('a Retry-After is seconds or an HTTP date and nothing else', async () => {
     const at = (offset) => new Date(Date.now() + offset);

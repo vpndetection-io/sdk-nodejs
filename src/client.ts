@@ -19,7 +19,11 @@ import { bogonResult, isBogon, unmapped } from './bogon.js';
 import { loadNodeBuiltin } from './builtin.js';
 import { errorFromEntry, errorFromResponse, VPNDetectionError } from './errors.js';
 import { OauthApi } from './oauth.js';
-import { asError, checkTimeout, deadline, unwrap, withRetry } from './transport.js';
+import {
+    isBatch, isBatchError, isChecksumsResponse, isDatabaseList, isDatabaseMetadata, isDownloadList, isEntitlement,
+    isLookup,
+} from './shapes.js';
+import { asError, checkTimeout, deadline, readable, unwrap, withRetry } from './transport.js';
 import { DATABASE_FORMATS, toResult, type Result } from './types.js';
 
 /**
@@ -191,7 +195,7 @@ export class VPNDetection {
             const res = await deadline(timeoutMs, (signal) => lookupIp({
                 client: this.client, path: { ip: ip }, signal: signal,
             }));
-            return toResult(unwrap<LookupResponse>(res));
+            return toResult(readable<LookupResponse>(res, isLookup));
         });
     }
 
@@ -213,7 +217,7 @@ export class VPNDetection {
             const res = await deadline(timeoutMs, (signal) => lookupMyIp({
                 client: this.client, signal: signal,
             }));
-            return toResult(unwrap<LookupResponse>(res));
+            return toResult(readable<LookupResponse>(res, isLookup));
         });
     }
 
@@ -241,7 +245,7 @@ export class VPNDetection {
             const res = await deadline(timeoutMs, (signal) => myEntitlement({
                 client: this.client, signal: signal,
             }));
-            return unwrap<Entitlement>(res);
+            return readable<Entitlement>(res, isEntitlement);
         });
     }
 
@@ -355,7 +359,7 @@ export class VPNDetection {
                 const res = await deadline(timeoutMs, (signal) => lookupBatch({
                     client: this.client, body: { ips: chunk }, signal: signal,
                 }));
-                return unwrap<BatchLookupResponse>(res);
+                return readable<BatchLookupResponse>(res, isBatch);
             });
         } catch (err) {
             const failure = asError(err);
@@ -364,16 +368,18 @@ export class VPNDetection {
             }
             return out;
         }
+        // An entry is judged alone: one the client cannot read is that address's
+        // error, and the rest of the chunk keeps its answers.
         for (const ip of chunk) {
             const served = body.results[ip];
             if (served !== undefined) {
                 // Cached by the `fetch()` this batch leads it through.
-                out.set(ip, toResult(served));
+                out.set(ip, isLookup(served) ? toResult(served) : unreadableEntry(ip));
                 continue;
             }
             const failed = body.errors[ip];
             if (failed !== undefined) {
-                out.set(ip, errorFromEntry(failed));
+                out.set(ip, isBatchError(failed) ? errorFromEntry(failed) : unreadableEntry(ip));
                 continue;
             }
             out.set(ip, new VPNDetectionError(
@@ -382,6 +388,10 @@ export class VPNDetection {
         }
         return out;
     }
+}
+
+function unreadableEntry(ip: string): VPNDetectionError {
+    return new VPNDetectionError('server_error', `unreadable batch answer for ${ip}, status 200`, 200);
 }
 
 /** The licensed dataset downloads. Access is granted by contract, not self-serve. */
@@ -398,7 +408,7 @@ export class DatabaseApi {
             const res = await deadline(this.timeoutMs, (signal) => listDatabases({
                 client: this.client, signal: signal,
             }));
-            return unwrap<ListDatabasesResponses[200]>(res).databases;
+            return readable<ListDatabasesResponses[200]>(res, isDatabaseList).databases;
         });
     }
 
@@ -407,7 +417,7 @@ export class DatabaseApi {
             const res = await deadline(this.timeoutMs, (signal) => databaseMetadata({
                 client: this.client, query: { id: id }, signal: signal,
             }));
-            return unwrap<DatabaseMetadata>(res);
+            return readable<DatabaseMetadata>(res, isDatabaseMetadata);
         });
     }
 
@@ -424,7 +434,7 @@ export class DatabaseApi {
             const res = await deadline(this.timeoutMs, (signal) => databaseChecksum({
                 client: this.client, query: { id: id, format: format }, signal: signal,
             }));
-            return unwrap<{ checksums: DbChecksums }>(res).checksums;
+            return readable<{ checksums: DbChecksums }>(res, isChecksumsResponse).checksums;
         });
     }
 
@@ -442,7 +452,7 @@ export class DatabaseApi {
                 ...(options.limit === undefined ? {} : { query: { limit: options.limit } }),
                 signal: signal,
             }));
-            return unwrap<ListDownloadsResponses[200]>(res).downloads;
+            return readable<ListDownloadsResponses[200]>(res, isDownloadList).downloads;
         });
     }
 

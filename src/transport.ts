@@ -17,6 +17,29 @@ export function unwrap<T>(res: Res): T {
 }
 
 /**
+ * A 2xx the call cannot read as its answer: a proxy's HTML page, a cut-off,
+ * empty or non-object body, or an object without what the call returns. The
+ * server's fault, so a retried `server_error` carrying the status. The
+ * generated client handed each back as data, so `lookup` answered a Result
+ * holding nothing for `{}`, `list` answered `undefined`, `metadata` the page
+ * itself, and a batch threw a raw TypeError (5.5.1, measured 2026-10-12).
+ */
+export function readable<T>(res: Res, valid: (data: unknown) => boolean): T {
+    const data = unwrap<unknown>(res);
+    if (!valid(data)) {
+        const status = res.response!.status;
+        throw new VPNDetectionError('server_error', `unreadable answer from the API, status ${status}`, status);
+    }
+    return data as T;
+}
+
+/** An object holding every member named, none of them missing. */
+export function hasMembers(value: unknown, members: readonly string[]): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+        && members.every((member) => (value as Record<string, unknown>)[member] !== undefined);
+}
+
+/**
  * Bound one attempt, and report an expiry as our own error rather than the
  * runtime's `TimeoutError`, whose message says nothing about which call gave up.
  *

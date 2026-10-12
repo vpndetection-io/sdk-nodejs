@@ -201,6 +201,16 @@ test('a per-call timeoutMs applies to each attempt', async () => {
 // a claim the compiler cannot check. `checksums` shipped broken in 1.0.x for
 // exactly that reason: it read a top-level `sha256` that is not there, and
 // returned undefined against a perfectly healthy API.
+const DATABASE = {
+    base: 'vpn_ip_extended', name: 'n', summary: 's', license_type: null, starts: null, expires: null,
+    renews_at: null, notice_due_at: null, in_term: false, standing: 'available',
+    versions: [{ id: 'vpn_ip_extended_v1', version: 1, formats: [{ format: 'mmdb', bytes: null }] }],
+};
+const DOWNLOAD = {
+    dataset_id: 'vpn_ip_extended_v1', format: 'mmdb', outcome: 'ok', sample: false, bytes: null,
+    http_status: null, apikey_id: null, client_ip: null, user_agent: null, created: 't',
+};
+
 test('database responses are unwrapped at the right depth', async () => {
     const routes = {
         '/api/v1/database/checksum': {
@@ -208,9 +218,9 @@ test('database responses are unwrapped at the right depth', async () => {
             format: 'mmdb',
             checksums: { md5: 'm', sha1: 's1', sha256: 's256', sha512: 's512' },
         },
-        '/api/v1/database/list': { databases: [{ id: 'vpn_ip_extended_v1' }] },
-        '/api/v1/database/downloads': { downloads: [{ id: 'vpn_ip_extended_v1' }] },
-        '/api/v1/database/metadata': { id: 'vpn_ip_extended_v1', columns: [] },
+        '/api/v1/database/list': { databases: [DATABASE] },
+        '/api/v1/database/downloads': { downloads: [DOWNLOAD] },
+        '/api/v1/database/metadata': { id: 'vpn_ip_extended_v1', updated: 't', entries: 1, schema: {} },
     };
     const fetchFn = async (input) => {
         const url = new URL(typeof input === 'string' ? input : input.url);
@@ -224,8 +234,8 @@ test('database responses are unwrapped at the right depth', async () => {
     assert.deepEqual(sums, { md5: 'm', sha1: 's1', sha256: 's256', sha512: 's512' });
     assert.equal(sums.sha256, 's256', 'the digest a caller actually wants must not be undefined');
 
-    assert.deepEqual(await client.database.list(), [{ id: 'vpn_ip_extended_v1' }]);
-    assert.deepEqual(await client.database.downloads(), [{ id: 'vpn_ip_extended_v1' }]);
+    assert.deepEqual(await client.database.list(), [DATABASE]);
+    assert.deepEqual(await client.database.downloads(), [DOWNLOAD]);
     assert.equal((await client.database.metadata('vpn_ip_extended_v1')).id, 'vpn_ip_extended_v1');
 });
 
@@ -495,7 +505,7 @@ function pathRecordingFetch() {
             ? { results: { '9.9.9.9': { ip: '9.9.9.9', is_vpn: false } }, errors: {} }
             : path.endsWith('oauth-authorization-server')
                 ? { issuer: 'x', authorization_endpoint: 'x', token_endpoint: 'x' }
-                : path.endsWith('list') ? [] : { ip: '8.8.8.8', is_vpn: false };
+                : path.endsWith('list') ? { databases: [] } : { ip: '8.8.8.8', is_vpn: false };
         return new Response(JSON.stringify(body), {
             status: 200, headers: { 'content-type': 'application/json' },
         });
