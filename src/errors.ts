@@ -156,17 +156,66 @@ function messageOf(body: unknown): string | undefined {
 }
 
 function parseRetryAfter(value: string | null): number | undefined {
-    if (value === null || value.trim() === '') {
+    if (value === null) {
         return undefined;
     }
-    const seconds = Number(value);
-    if (Number.isFinite(seconds) && seconds >= 0) {
-        return seconds;
+    const text = value.trim();
+    // Digits alone, as RFC 9110's delay-seconds is: `Number` also read `+1`,
+    // `0x10`, `1e3` and `1.5` as counts (5.5.1, measured 2026-10-12).
+    if (/^\d+$/.test(text)) {
+        const seconds = Number(text);
+        return Number.isFinite(seconds) ? seconds : undefined;
     }
-    // The header also permits an HTTP date.
-    const when = Date.parse(value);
-    if (Number.isNaN(when)) {
+    const when = httpDate(text);
+    if (when === undefined) {
         return undefined;
     }
     return Math.max(0, Math.ceil((when - Date.now()) / 1000));
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH = MONTHS.join('|');
+const IMF_FIXDATE = new RegExp(`^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), (\\d{2}) (${MONTH}) (\\d{4}) (\\d{2}):(\\d{2}):(\\d{2}) GMT$`);
+const RFC850_DATE = new RegExp(
+    `^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), (\\d{2})-(${MONTH})-(\\d{2}) (\\d{2}):(\\d{2}):(\\d{2}) GMT$`,
+);
+const ASCTIME_DATE = new RegExp(`^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (${MONTH}) ( \\d|\\d{2}) (\\d{2}):(\\d{2}):(\\d{2}) (\\d{4})$`);
+
+/**
+ * An HTTP date in milliseconds, in exactly the three forms RFC 9110 has a
+ * recipient read, all GMT. `Date.parse` took far more: ISO 8601 and words such
+ * as `Jan 1 2099`, a zone such as `PST` or `+0500`, a day the month lacks
+ * (`31 Nov`, rolled into December), `-1` as a year, and an asctime date as
+ * LOCAL time, so a throttle five seconds out waited none on a box east of GMT
+ * (5.5.1, measured 2026-10-12).
+ */
+function httpDate(text: string): number | undefined {
+    let parts: [string, string, number, string, string, string] | undefined;
+    let m = IMF_FIXDATE.exec(text);
+    if (m !== null) {
+        parts = [m[1]!, m[2]!, Number(m[3]), m[4]!, m[5]!, m[6]!];
+    } else if ((m = RFC850_DATE.exec(text)) !== null) {
+        // A two-digit year more than 50 years ahead is the last such year past.
+        let year = 2000 + Number(m[3]);
+        if (year > new Date().getUTCFullYear() + 50) {
+            year -= 100;
+        }
+        parts = [m[1]!, m[2]!, year, m[4]!, m[5]!, m[6]!];
+    } else if ((m = ASCTIME_DATE.exec(text)) !== null) {
+        parts = [m[2]!.trim(), m[1]!, Number(m[6]), m[3]!, m[4]!, m[5]!];
+    }
+    if (parts === undefined) {
+        return undefined;
+    }
+    const [day, month, year, hour, minute, second] = parts;
+    const d = Number(day);
+    const mo = MONTHS.indexOf(month);
+    const h = Number(hour);
+    const mi = Number(minute);
+    const s = Number(second);
+    const date = new Date(Date.UTC(year, mo, d));
+    if (date.getUTCDate() !== d || date.getUTCMonth() !== mo || h > 23 || mi > 59 || s > 60) {
+        return undefined;
+    }
+    return Date.UTC(year, mo, d, h, mi, s);
 }
