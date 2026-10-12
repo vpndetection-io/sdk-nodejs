@@ -128,11 +128,12 @@ export class VPNDetection {
         // directly rather than through the generated client and has to reach
         // the same implementation a test substituted.
         const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+        const apiKey = checkApiKey(options.apiKey);
         this.client = createClient(createConfig({
             // Every path appended starts with a slash, and a second one is another
             // path, which the API answers with a redirect.
             baseUrl: (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, ''),
-            ...(options.apiKey === undefined ? {} : { auth: bearerOnly(options.apiKey) }),
+            ...(apiKey === undefined ? {} : { auth: bearerOnly(apiKey) }),
             fetch: fetchImpl,
         }));
         this.cache = options.cache === false ? null : new LRUCache<string, Result, () => Promise<Result>>({
@@ -388,6 +389,27 @@ export class VPNDetection {
         }
         return out;
     }
+}
+
+/**
+ * The key without the blanks around it, and no key at all for blanks alone,
+ * which went out as `Authorization: Bearer` (5.5.1, measured 2026-10-12). A
+ * control character inside it is refused here: fetch refuses such a header, so
+ * every call failed as a `network` error with nothing sent. `null` is no key,
+ * as it always was.
+ */
+function checkApiKey(apiKey: unknown): string | undefined {
+    if (apiKey === undefined || apiKey === null) {
+        return undefined;
+    }
+    if (typeof apiKey !== 'string') {
+        throw new VPNDetectionError('bad_request', `apiKey must be a string, got ${typeof apiKey}`);
+    }
+    const key = apiKey.trim();
+    if (/[\u0000-\u001f\u007f]/.test(key)) {
+        throw new VPNDetectionError('bad_request', 'apiKey must not contain a control character');
+    }
+    return key === '' ? undefined : key;
 }
 
 function unreadableEntry(ip: string): VPNDetectionError {

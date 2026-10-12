@@ -208,3 +208,16 @@ test('a Retry-After is seconds or an HTTP date and nothing else', async () => {
         assert.equal(c.calls.length, 1, value);
     }
 });
+
+test('the key goes out trimmed, blanks are no key, and a control character is refused', async () => {
+    const answer = body(`{"ip":"${IP}","is_vpn":false}`);
+    for (const [key, sent] of [['', null], [' ', null], ['\t', null], ['  k  ', 'Bearer k'], [null, null]]) {
+        const c = rawClient(answer, { apiKey: key });
+        await c.client.lookup(IP);
+        assert.equal(c.calls[0].auth, sent, JSON.stringify(key));
+    }
+    for (const key of ['k\r\nX-Injected: 1', 'k\u0000', 'k\u007f', 'k\nx']) {
+        assert.throws(() => new VPNDetection({ apiKey: key }), (err) => err.kind === 'bad_request', JSON.stringify(key));
+    }
+    assert.throws(() => new VPNDetection({ apiKey: 5 }), (err) => err.kind === 'bad_request');
+});
