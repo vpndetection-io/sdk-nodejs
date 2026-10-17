@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.6.0 - 2026-10-17
+
+### Features
+
+- Re-pin the spec to 2026.10.16: dynamic client registration ([`6a35c65`](https://github.com/vpndetection-io/sdk-nodejs/commit/6a35c65f9074f9e86d5f43677bc2ac17b26bdcd2))
+
 ## 5.5.3 - 2026-10-16
 
 ### Fixes
