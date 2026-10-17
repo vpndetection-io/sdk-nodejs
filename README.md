@@ -37,7 +37,7 @@ const client = new VPNDetection({ apiKey: process.env.VPNDETECTION_API_KEY });
 
 const result = await client.lookup('45.83.91.1');
 console.log(result.isVpn);          // true
-console.log(result.vpn?.provider);  // 'mullvad'
+console.log(result.vpn?.provider);  // 'nordvpn'
 console.log(result.isHosting);      // true
 console.log(result.hosting?.provider);
 ```
