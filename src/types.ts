@@ -1,8 +1,9 @@
 import type {
-    ClassDetail, Database, DatabaseFormat, LookupResponse, ProxyDetail, Standing, VpnDetail,
+    ClassDetail, Database, DatabaseFormat, LookupResponse, ProxyDetail, PubproxyDetail, Standing,
+    VpnDetail,
 } from './generated/types.gen.js';
 
-export type { ClassDetail, ProxyDetail, VpnDetail, LookupResponse };
+export type { ClassDetail, ProxyDetail, PubproxyDetail, VpnDetail, LookupResponse };
 
 // The runtime halves of the three closed vocabularies the API publishes, for a
 // caller that wants to validate or enumerate rather than switch. The generated
@@ -47,6 +48,7 @@ export interface Result {
     isResproxy?: boolean;
     isDcproxy?: boolean;
     isMobproxy?: boolean;
+    isPubproxy?: boolean;
 
     vpn?: VpnDetail;
     hosting?: ClassDetail;
@@ -56,6 +58,7 @@ export interface Result {
     resproxy?: ProxyDetail;
     dcproxy?: ProxyDetail;
     mobproxy?: ProxyDetail;
+    pubproxy?: PubproxyDetail;
 
     /** The response exactly as it came off the wire, with its original names. */
     raw: LookupResponse;
@@ -79,6 +82,7 @@ export function toResult(body: LookupResponse): Result {
     copyFlag(body, r, 'is_resproxy', 'isResproxy');
     copyFlag(body, r, 'is_dcproxy', 'isDcproxy');
     copyFlag(body, r, 'is_mobproxy', 'isMobproxy');
+    copyFlag(body, r, 'is_pubproxy', 'isPubproxy');
     copyDetail(body, r, 'vpn', 'vpn');
     copyDetail(body, r, 'hosting', 'hosting');
     copyDetail(body, r, 'relay', 'relay');
@@ -87,13 +91,14 @@ export function toResult(body: LookupResponse): Result {
     copyDetail(body, r, 'resproxy', 'resproxy');
     copyDetail(body, r, 'dcproxy', 'dcproxy');
     copyDetail(body, r, 'mobproxy', 'mobproxy');
+    copyDetail(body, r, 'pubproxy', 'pubproxy');
     return r;
 }
 
 function copyFlag(
     body: LookupResponse, out: Result,
     from: keyof LookupResponse, to: 'isHosting' | 'isRelay' | 'isTor' | 'isCdn'
-        | 'isResproxy' | 'isDcproxy' | 'isMobproxy',
+        | 'isResproxy' | 'isDcproxy' | 'isMobproxy' | 'isPubproxy',
 ) {
     if (from in body && body[from] !== undefined) {
         out[to] = body[from] as boolean;
@@ -103,7 +108,8 @@ function copyFlag(
 function copyDetail(
     body: LookupResponse, out: Result,
     from: keyof LookupResponse,
-    to: 'vpn' | 'hosting' | 'relay' | 'tor' | 'cdn' | 'resproxy' | 'dcproxy' | 'mobproxy',
+    to: 'vpn' | 'hosting' | 'relay' | 'tor' | 'cdn' | 'resproxy' | 'dcproxy' | 'mobproxy'
+        | 'pubproxy',
 ) {
     if (from in body && body[from] !== undefined) {
         out[to] = body[from] as never;

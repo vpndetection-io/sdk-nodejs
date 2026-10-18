@@ -147,7 +147,7 @@ test('lookup preserves absent-versus-false across every plan shape', async () =>
         for (const k of c.expect.emptyPresent ?? []) {
             assert.deepEqual(r[camel(k)], {}, `${c.name}: ${k} must be present and empty`);
         }
-        for (const obj of ['vpn', 'hosting', 'dcproxy']) {
+        for (const obj of ['vpn', 'hosting', 'dcproxy', 'pubproxy']) {
             if (c.expect[obj] !== undefined) {
                 assert.deepEqual(r[obj], c.expect[obj], `${c.name}: ${obj}`);
             }

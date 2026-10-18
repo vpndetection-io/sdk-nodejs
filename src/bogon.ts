@@ -59,6 +59,7 @@ export function bogonResult(ip: string): Result {
         isResproxy: false,
         isDcproxy: false,
         isMobproxy: false,
+        isPubproxy: false,
         vpn: {},
         hosting: {},
         relay: {},
@@ -67,6 +68,7 @@ export function bogonResult(ip: string): Result {
         resproxy: {},
         dcproxy: {},
         mobproxy: {},
+        pubproxy: {},
         raw: {} as LookupResponse,
     };
 }
