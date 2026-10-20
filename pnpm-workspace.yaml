@@ -1,8 +1,7 @@
 minimumReleaseAge: 10080
-# Nothing third-party belongs here. When npm serves a package without a `time`
-# field and the cooldown hard-fails (ERR_PNPM_MISSING_TIME), lower the window for
-# that one install and restore it. The lockfile then
-# carries the resolution and --frozen-lockfile needs no exception.
+# Nothing third-party belongs in a minimumReleaseAgeExclude: a cooldown failure is met
+# by lowering the window for that one install and restoring it, and the lockfile then
+# carries the resolution, so --frozen-lockfile needs no exception.
 
 # @hey-api/json-schema-ref-parser pins js-yaml 4.2.0 exactly, which carries three
 # high advisories (GHSA-52cp-r559-cp3m, GHSA-5p4m-2wfm-xmqj, GHSA-2883-xcg3-v3hh).
