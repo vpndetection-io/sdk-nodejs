@@ -134,14 +134,14 @@ test('a 2xx that lacks a required member or does not parse is the ordinary error
             status: 200, body: { access_token: 'mo_at_x', token_type: 'Bearer', expires_in: '3600' },
             kind: 'server_error',
         },
-        'not JSON': { status: 200, rawBody: '<html>', kind: 'network' },
+        'not JSON': { status: 200, rawBody: '<html>', kind: 'server_error' },
     };
     for (const [name, reply] of Object.entries(cases)) {
         await t.test(name, async () => {
             const stub = oauthStub([reply]);
             const call = oauthClient(stub).oauth.exchangeDeviceCode('vpndetection-cli', 'mo_dc_x');
             const err = await settle(call, stub.bound);
-            assertOutcome(err, { type: 'client', kind: reply.kind }, name);
+            assertOutcome(err, { type: 'client', kind: reply.kind, status: reply.status }, name);
             assert.equal(stub.requests.length, 1, 'an exchange is never retried');
         });
     }
