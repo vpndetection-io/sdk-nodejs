@@ -111,6 +111,19 @@ test('one batch entry it cannot read is that address error alone', async () => {
     }
 });
 
+test('an address named like a member of every object reads its own entry', async () => {
+    const names = ['__proto__', 'constructor', 'toString'];
+    const errors = names.map((name) => `"${name}":{"status":400,"error":"not a valid IP address"}`).join(',');
+    const c = rawClient(body(`{"results":{"${IP}":{"ip":"${IP}","is_vpn":true}},"errors":{${errors}}}`));
+    const out = await c.client.lookupBatch([IP, ...names]);
+    assert.equal(out.get(IP).isVpn, true);
+    for (const name of names) {
+        assert.equal(out.get(name).kind, 'bad_request', name);
+        assert.equal(out.get(name).status, 400, name);
+    }
+    assert.equal(c.calls.length, 1);
+});
+
 test('a readable answer still comes back', async () => {
     let c = rawClient(body(`{"ip":"${IP}","is_vpn":true}`));
     assert.equal((await c.client.lookup(IP)).isVpn, true);

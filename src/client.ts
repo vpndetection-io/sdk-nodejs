@@ -370,15 +370,18 @@ export class VPNDetection {
             return out;
         }
         // An entry is judged alone: one the client cannot read is that address's
-        // error, and the rest of the chunk keeps its answers.
+        // error, and the rest of the chunk keeps its answers. Each map is read by
+        // its own keys alone: through 5.8.0 `__proto__`, `constructor` and
+        // `toString` read the object's prototype as a served answer, so the API's
+        // 400 for each came back as an unreadable 200.
         for (const ip of chunk) {
-            const served = body.results[ip];
+            const served = Object.hasOwn(body.results, ip) ? body.results[ip] : undefined;
             if (served !== undefined) {
                 // Cached by the `fetch()` this batch leads it through.
                 out.set(ip, isLookup(served) ? toResult(served) : unreadableEntry(ip));
                 continue;
             }
-            const failed = body.errors[ip];
+            const failed = Object.hasOwn(body.errors, ip) ? body.errors[ip] : undefined;
             if (failed !== undefined) {
                 out.set(ip, isBatchError(failed) ? errorFromEntry(failed) : unreadableEntry(ip));
                 continue;
