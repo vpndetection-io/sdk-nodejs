@@ -17,7 +17,7 @@ Requires Node.js 22 or newer. TypeScript types are included.
 
 ## Usage
 
-**No API key needed to start.** The free tier answers `ip` and `is_vpn`, and allows 1000 requests per day per source address.
+**No API key needed to start.** Without a key, a lookup answers `ip` and `is_vpn`, up to 1000 a day per source address.
 
 ```js
 import { VPNDetection } from 'vpndetection';
@@ -30,16 +30,17 @@ console.log(result.isVpn);   // true
 
 ### With an API key
 
-An API key raises your quota, and raises your features on a paid plan. Create one in the [console](https://app.vpndetection.io), then pass it in:
+A free key adds Tor and relay detection, where the address is and the AS that announces it. Every paid plan answers every field, the same on each, and the plans differ only in how many lookups they include. Create a key in the [console](https://app.vpndetection.io), then pass it in:
 
 ```js
 const client = new VPNDetection({ apiKey: process.env.VPNDETECTION_API_KEY });
 
 const result = await client.lookup('45.83.91.1');
-console.log(result.isVpn);          // true
-console.log(result.vpn?.provider);
-console.log(result.isHosting);      // true
-console.log(result.hosting?.provider);
+console.log(result.isVpn);              // true
+console.log(result.location?.country);  // the ISO 3166 country code
+console.log(result.asn?.name);          // who runs the announcing network
+console.log(result.vpn?.provider);      // on a paid plan
+console.log(result.isHosting);          // on a paid plan
 ```
 
 ### Your own address
@@ -246,7 +247,7 @@ Each redirect URI must be https on a public host name, or http on a loopback add
 
 ### Absent is not false
 
-Only `ip` and `isVpn` come back on every plan. A field your plan does not include is `undefined`, which means "not in your plan" rather than "checked, and no".
+Without a key only `ip` and `isVpn` come back, and a free key adds Tor, relay, `location` and `asn`. A field your key does not include is `undefined`, which means "not in your plan" rather than "checked, and no".
 
 ```js
 result.isHosting ?? false        // when you only want the flag

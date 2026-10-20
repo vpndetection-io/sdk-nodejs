@@ -126,6 +126,8 @@ test('a bogon is answered locally in the full max shape', async () => {
     for (const o of data.bogonResponse.emptyObjects) {
         assert.deepEqual(r[camel(o)], {}, `${o} must be present and empty`);
     }
+    assert.deepEqual(r.location, data.bogonResponse.location, 'location must carry every key, empty');
+    assert.deepEqual(r.asn, data.bogonResponse.asn, 'asn must carry every key, empty');
     assert.equal(stub.calls.length, 0, 'a bogon must not reach the network');
 });
 
@@ -147,7 +149,7 @@ test('lookup preserves absent-versus-false across every plan shape', async () =>
         for (const k of c.expect.emptyPresent ?? []) {
             assert.deepEqual(r[camel(k)], {}, `${c.name}: ${k} must be present and empty`);
         }
-        for (const obj of ['vpn', 'hosting', 'dcproxy', 'pubproxy']) {
+        for (const obj of ['vpn', 'hosting', 'dcproxy', 'pubproxy', 'location', 'asn']) {
             if (c.expect[obj] !== undefined) {
                 assert.deepEqual(r[obj], c.expect[obj], `${c.name}: ${obj}`);
             }

@@ -1,9 +1,9 @@
 import type {
-    ClassDetail, Database, DatabaseFormat, LookupResponse, ProxyDetail, PubproxyDetail, Standing,
+    Asn, ClassDetail, Database, DatabaseFormat, Location, LookupResponse, ProxyDetail, PubproxyDetail, Standing,
     VpnDetail,
 } from './generated/types.gen.js';
 
-export type { ClassDetail, ProxyDetail, PubproxyDetail, VpnDetail, LookupResponse };
+export type { Asn, ClassDetail, Location, ProxyDetail, PubproxyDetail, VpnDetail, LookupResponse };
 
 // The runtime halves of the three closed vocabularies the API publishes, for a
 // caller that wants to validate or enumerate rather than switch. The generated
@@ -60,6 +60,14 @@ export interface Result {
     mobproxy?: ProxyDetail;
     pubproxy?: PubproxyDetail;
 
+    /**
+     * Where the address is, on every keyed answer: every key present, empty strings where it is
+     * not known.
+     */
+    location?: Location;
+    /** The AS announcing the address, on every keyed answer: `asn` is 0 where none does. */
+    asn?: Asn;
+
     /** The response exactly as it came off the wire, with its original names. */
     raw: LookupResponse;
 }
@@ -92,6 +100,8 @@ export function toResult(body: LookupResponse): Result {
     copyDetail(body, r, 'dcproxy', 'dcproxy');
     copyDetail(body, r, 'mobproxy', 'mobproxy');
     copyDetail(body, r, 'pubproxy', 'pubproxy');
+    copyDetail(body, r, 'location', 'location');
+    copyDetail(body, r, 'asn', 'asn');
     return r;
 }
 
@@ -109,7 +119,7 @@ function copyDetail(
     body: LookupResponse, out: Result,
     from: keyof LookupResponse,
     to: 'vpn' | 'hosting' | 'relay' | 'tor' | 'cdn' | 'resproxy' | 'dcproxy' | 'mobproxy'
-        | 'pubproxy',
+        | 'pubproxy' | 'location' | 'asn',
 ) {
     if (from in body && body[from] !== undefined) {
         out[to] = body[from] as never;

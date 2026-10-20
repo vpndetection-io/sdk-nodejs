@@ -41,7 +41,8 @@ export function unmapped(ip: string): string {
 
 /**
  * The answer a bogon gets, in the full shape the API serves at its widest plan:
- * every flag present and false, every detail object present and empty.
+ * every flag present and false, every detail object present and empty, and
+ * `location` and `asn` with every key empty, as the API answers a bogon.
  *
  * `isBogon` is set so a caller can always tell a locally computed answer from a
  * served one. Note this is deliberately the WIDEST shape regardless of your
@@ -69,6 +70,19 @@ export function bogonResult(ip: string): Result {
         dcproxy: {},
         mobproxy: {},
         pubproxy: {},
+        location: {
+            continent: '',
+            continent_name: '',
+            country: '',
+            country_name: '',
+            timezone: '',
+            currency_code: '',
+            currency_name: '',
+            currency_symbol: '',
+            flag_emoji: '',
+            flag_unicode: '',
+        },
+        asn: { asn: 0, name: '', domain: '', type: '', prefix: '' },
         raw: {} as LookupResponse,
     };
 }
