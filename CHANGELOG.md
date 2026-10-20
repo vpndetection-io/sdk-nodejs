@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.8.1 - 2026-10-20
+
+### Fixes
+
+- Read a batch entry by the answer's own keys alone ([`c6bd29c`](https://github.com/vpndetection-io/sdk-nodejs/commit/c6bd29c1de7620aea08ba581426365dceb9ccb28))
+
 ## 5.8.0 - 2026-10-19
 
 ### Features
