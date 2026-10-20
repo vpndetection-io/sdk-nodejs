@@ -2,6 +2,13 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.10.0 - 2026-10-20
+
+### Features
+
+- Add location and asn to lookup results, a bogon's included ([`5c2bcea`](https://github.com/vpndetection-io/sdk-nodejs/commit/5c2bcea984dc67360714ed82e07015acce3955f7))
+- Read open on databases and downloads, and mark vpn.method deprecated ([`ea03041`](https://github.com/vpndetection-io/sdk-nodejs/commit/ea03041de375025d2f1af0983bad37107f031c76))
+
 ## 5.9.0 - 2026-10-20
 
 ### Features
