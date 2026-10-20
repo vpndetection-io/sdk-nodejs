@@ -2,6 +2,16 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.9.0 - 2026-10-20
+
+### Features
+
+- Add oauth.register, for RFC 7591 dynamic client registration ([`9440246`](https://github.com/vpndetection-io/sdk-nodejs/commit/9440246a543d09e20ae70ba4c5da0f27f2af6ec3))
+
+### Fixes
+
+- Report an OAuth answer that is not JSON as a server_error with its status ([`432ddc3`](https://github.com/vpndetection-io/sdk-nodejs/commit/432ddc34c1a80873d47afe03f00c4a1193df7e25))
+
 ## 5.8.1 - 2026-10-20
 
 ### Fixes
