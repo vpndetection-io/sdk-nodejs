@@ -3,7 +3,7 @@
     "version": "5.8.0",
     "description": "Official Node.js client library for the VPNDetection API. Detect VPNs, proxies, Tor, hosting and CDN IPs.",
     "type": "module",
-    "packageManager": "pnpm@11.1.0",
+    "packageManager": "pnpm@12.12.1",
     "license": "MIT",
     "homepage": "https://vpndetection.io",
     "repository": {
