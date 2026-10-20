@@ -6,7 +6,7 @@ export type {
 export { OauthApi } from './oauth.js';
 export type {
     OauthOptions, DeviceAuthorizationOptions, PollDeviceTokenOptions, AuthorizationUrlOptions,
-    OauthMetadata, DeviceAuthorization, TokenResponse, Pkce,
+    RegisterOptions, OauthMetadata, DeviceAuthorization, TokenResponse, Pkce, ClientRegistration,
 } from './oauth.js';
 export { isBogon } from './bogon.js';
 export {

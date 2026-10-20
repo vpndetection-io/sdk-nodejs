@@ -1,7 +1,7 @@
 import { nodeBuiltin } from './builtin.js';
 import type { Client } from './generated/client/index.js';
 import {
-    oauthDeviceAuthorization, oauthMetadata, oauthRevoke, oauthToken,
+    oauthDeviceAuthorization, oauthMetadata, oauthRegister, oauthRevoke, oauthToken,
 } from './generated/sdk.gen.js';
 import type { TokenRequest } from './generated/types.gen.js';
 
@@ -34,6 +34,12 @@ export interface AuthorizationUrlOptions {
     state?: string;
     /** The API the tokens are meant for. */
     resource?: string;
+}
+
+/** What a registration asks for beyond its redirect URIs. A member left out is left out of the request. */
+export interface RegisterOptions extends OauthOptions {
+    /** Shown to the person as your client's own claim, marked unverified, beside where its redirect goes. */
+    clientName?: string;
 }
 
 /** One sign-in's PKCE pair: `challenge` goes in the authorization URL, `verifier` to the exchange. */
@@ -81,6 +87,23 @@ export interface DeviceAuthorization {
     verification_uri_complete?: string;
     expires_in: number;
     interval: number;
+}
+
+/** A registered client, public and with no secret: it proves each sign-in with PKCE. */
+export interface ClientRegistration {
+    /** The client ID for `authorizationUrl` and `exchangeAuthorizationCode`. */
+    client_id: string;
+    /** When it was issued, in Unix seconds. */
+    client_id_issued_at: number;
+    /** As the person will see it, which is a placeholder when no name was given or none can be shown. */
+    client_name: string;
+    redirect_uris: string[];
+    grant_types?: string[];
+    response_types?: string[];
+    /** Always `none`. */
+    token_endpoint_auth_method: string;
+    /** The most this client may be granted. */
+    scope?: string;
 }
 
 /**
@@ -227,6 +250,34 @@ export class OauthApi {
         return `${this.client.getConfig().baseUrl ?? ''}/oauth/authorize?${query}`;
     }
 
+    /**
+     * Register a client for the authorization code flow, for a program that
+     * cannot serve a Client ID Metadata Document, and get its `client_id`.
+     *
+     * Each redirect URI must be https on a public host name, or http on a
+     * loopback address, which then matches on any port; the server refuses any
+     * other with an `OauthError` coded `invalid_redirect_uri`. Nothing is kept
+     * until a person approves the client, so registering again costs nothing,
+     * and this is retried like a lookup.
+     */
+    async register(redirectUris: string[], options: RegisterOptions = {}): Promise<ClientRegistration> {
+        if (!Array.isArray(redirectUris) || redirectUris.length === 0) {
+            throw new VPNDetectionError('bad_request', 'redirectUris must list at least one URI');
+        }
+        redirectUris.forEach((uri, i) => checkText(`redirectUris[${i}]`, uri));
+        if (options.clientName) {
+            checkText('clientName', options.clientName);
+        }
+        const body = { redirect_uris: [...redirectUris], client_name: options.clientName || undefined };
+        const timeoutMs = checkTimeout(options.timeoutMs) ?? this.timeoutMs;
+        return withRetry(this.retries, async () => {
+            const res = await deadline(timeoutMs, (signal) => oauthRegister({
+                client: this.client, body: body, signal: signal,
+            }));
+            return decode(res, CLIENT_REGISTRATION);
+        });
+    }
+
     /** A fresh PKCE pair for one sign-in, from the system's secure random source. */
     createPkce(): Pkce {
         const verifier = nodeCrypto().randomBytes(32).toString('base64url');
@@ -345,6 +396,16 @@ function percentEncode(name: string, value: string): string {
     }
 }
 
+// A lone surrogate has no UTF-8, so JSON would carry it only as an escape the server cannot decode.
+function checkText(name: string, value: unknown): void {
+    if (typeof value !== 'string' || value === '') {
+        throw new VPNDetectionError('bad_request', `${name} must be a non-empty string`);
+    }
+    if (!value.isWellFormed()) {
+        throw new VPNDetectionError('bad_request', `${name} is not valid UTF-16, so it has no UTF-8 to send`);
+    }
+}
+
 interface Clock {
     now(): number;
     sleep(ms: number, signal?: AbortSignal): Promise<void>;
@@ -391,6 +452,17 @@ const TOKEN_RESPONSE: Record<keyof TokenResponse, Member> = {
     scope: { type: 'string' },
     apikey_id: { type: 'string', wire: 'mslm:apikey_id' },
     apikey: { type: 'string', wire: 'mslm:apikey' },
+};
+
+const CLIENT_REGISTRATION: Record<keyof ClientRegistration, Member> = {
+    client_id: { type: 'string', required: true },
+    client_id_issued_at: { type: 'number', required: true },
+    client_name: { type: 'string', required: true },
+    redirect_uris: { type: 'string[]', required: true },
+    grant_types: { type: 'string[]' },
+    response_types: { type: 'string[]' },
+    token_endpoint_auth_method: { type: 'string', required: true },
+    scope: { type: 'string' },
 };
 
 // Only the declared members are copied, on PRESENCE, so an absent one stays

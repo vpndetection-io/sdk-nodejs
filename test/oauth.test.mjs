@@ -23,6 +23,11 @@ const LOOP_BOUND = 16;
 // Satisfies every operation's required members at once.
 const EVERY_REQUIRED_MEMBER = {
     issuer: BASE_URL,
+    client_id: 'dcr_x',
+    client_id_issued_at: 1792304178,
+    client_name: 'Example CLI',
+    redirect_uris: ['http://127.0.0.1/cb'],
+    token_endpoint_auth_method: 'none',
     authorization_endpoint: `${BASE_URL}/oauth/authorize`,
     token_endpoint: `${BASE_URL}/oauth/token`,
     device_code: 'mo_dc_x',
@@ -51,9 +56,10 @@ test('no OAuth request carries the API key', async () => {
     await client.oauth.exchangeRefreshToken('vpndetection-cli', 'mo_rt_x');
     await client.oauth.exchangeAuthorizationCode('vpndetection-cli', 'mo_ac_x', 'v'.repeat(43), 'http://127.0.0.1/cb');
     await client.oauth.revoke('vpndetection-cli', 'mo_rt_x');
+    await client.oauth.register(['http://127.0.0.1/cb'], { clientName: 'Example CLI' });
     assertNotError(await settle(client.oauth.pollDeviceToken('vpndetection-cli', device), stub.bound));
 
-    assert.equal(stub.requests.length, 7);
+    assert.equal(stub.requests.length, 8);
     const url = client.oauth.authorizationUrl('vpndetection-cli', 'http://127.0.0.1/cb', 'c'.repeat(43));
     assert.equal(url.includes(apiKey), false, 'the authorization URL carried the API key');
     for (const req of stub.requests) {
@@ -187,6 +193,82 @@ test('only what consumes nothing is retried, and never an OAuth refusal', async 
             const stub = oauthStub(c.responses);
             const outcome = await settle(callOauth(oauthClient(stub), c.operation, c.args), stub.bound);
 
+            assert.equal(stub.requests.length, c.expect.requests, 'requests sent');
+            if (c.expect.outcome === 'ok') {
+                assertNotError(outcome);
+                return;
+            }
+            assertOutcome(outcome, { ...c.expect, type: c.expect.outcome }, c.name);
+        });
+    }
+});
+
+test('register posts exactly its JSON body, and refuses an empty URI before sending', async (t) => {
+    const { register } = corpus;
+    for (const c of register.bodies.cases) {
+        await t.test(c.name, async () => {
+            const stub = oauthStub([{ status: 201, body: EVERY_REQUIRED_MEMBER }]);
+            await oauthClient(stub, { baseUrl: `${BASE_URL}/` }).oauth.register(
+                c.args.redirectUris, { clientName: c.args.clientName, timeoutMs: 5000 },
+            );
+
+            assert.equal(stub.requests.length, 1);
+            const req = stub.requests[0];
+            assertEndpoint(req, register.endpoint);
+            assert.equal(req.url, `${BASE_URL}${register.endpoint.path}`);
+            const type = req.headers.get('content-type') ?? '';
+            assert.ok(type.startsWith(register.contentType), `sent as ${type}`);
+            assert.deepEqual(JSON.parse(req.body), c.body);
+        });
+    }
+    const refusals = [
+        ...register.refusals.cases,
+        { name: 'a lone surrogate', args: { redirectUris: ['http://127.0.0.1/cb\ud800'] } },
+        { name: 'a name with a lone surrogate', args: { redirectUris: ['http://127.0.0.1/cb'], clientName: '\udc00' } },
+        { name: 'not a list', args: { redirectUris: 'http://127.0.0.1/cb' } },
+    ];
+    for (const c of refusals) {
+        await t.test(`refused: ${c.name}`, async () => {
+            const stub = oauthStub([{ status: 201, body: EVERY_REQUIRED_MEMBER }]);
+            const call = oauthClient(stub).oauth.register(c.args.redirectUris, { clientName: c.args.clientName });
+            assertOutcome(await settle(call, stub.bound), { type: 'client', kind: 'bad_request' }, c.name);
+            assert.equal(stub.requests.length, 0, 'nothing is sent');
+        });
+    }
+});
+
+test('register decodes on presence, and anything it cannot read is a server_error with the status', async (t) => {
+    const { register } = corpus;
+    for (const c of register.responses.cases) {
+        await t.test(c.name, async () => {
+            const got = await oauthClient(oauthStub([c])).oauth.register(['http://127.0.0.1/cb']);
+            for (const [name, value] of Object.entries(c.expect.present)) {
+                assert.deepEqual(got[name], value, name);
+            }
+            for (const name of c.expect.absent) {
+                assert.equal(Object.hasOwn(got, name), false, `${name} must be ABSENT`);
+            }
+        });
+    }
+    for (const c of register.unreadable.cases) {
+        await t.test(`unreadable: ${c.name}`, async () => {
+            const stub = oauthStub([c]);
+            const call = oauthClient(stub, { retries: 0 }).oauth.register(['http://127.0.0.1/cb']);
+            const want = { type: 'client', kind: 'server_error', status: c.status };
+            assertOutcome(await settle(call, stub.bound), want, c.name);
+            assert.equal(stub.requests.length, 1);
+        });
+    }
+    for (const c of register.errors) {
+        await t.test(`refused: ${c.name}`, async () => {
+            const call = oauthClient(oauthStub([c])).oauth.register(['http://127.0.0.1/cb']);
+            assertOutcome(await settle(call, loopBound()), c.expect, c.name);
+        });
+    }
+    for (const c of register.retries) {
+        await t.test(c.name, async () => {
+            const stub = oauthStub(c.responses);
+            const outcome = await settle(oauthClient(stub).oauth.register(c.args.redirectUris), stub.bound);
             assert.equal(stub.requests.length, c.expect.requests, 'requests sent');
             if (c.expect.outcome === 'ok') {
                 assertNotError(outcome);
