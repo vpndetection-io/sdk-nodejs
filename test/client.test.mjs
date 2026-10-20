@@ -203,11 +203,11 @@ test('a per-call timeoutMs applies to each attempt', async () => {
 // returned undefined against a perfectly healthy API.
 const DATABASE = {
     base: 'vpn_ip_extended', name: 'n', summary: 's', license_type: null, starts: null, expires: null,
-    renews_at: null, notice_due_at: null, in_term: false, standing: 'available',
+    renews_at: null, notice_due_at: null, in_term: false, standing: 'available', open: false,
     versions: [{ id: 'vpn_ip_extended_v1', version: 1, formats: [{ format: 'mmdb', bytes: null }] }],
 };
 const DOWNLOAD = {
-    dataset_id: 'vpn_ip_extended_v1', format: 'mmdb', outcome: 'ok', sample: false, bytes: null,
+    dataset_id: 'vpn_ip_extended_v1', format: 'mmdb', outcome: 'ok', sample: false, open: false, bytes: null,
     http_status: null, apikey_id: null, client_ip: null, user_agent: null, created: 't',
 };
 

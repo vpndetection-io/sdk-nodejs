@@ -12,12 +12,12 @@ export const ENTITLEMENT_MEMBERS = ['org_id', 'apikey', 'plan', 'usage'] as cons
 export const ENTITLEMENT_APIKEY_MEMBERS = ['id', 'allowed_cidrs'] as const;
 export const ENTITLEMENT_PLAN_MEMBERS = ['key', 'tier'] as const;
 export const ENTITLEMENT_USAGE_MEMBERS = ['requests', 'quota', 'window_start', 'window_end'] as const;
-export const DATABASE_MEMBERS = ['base', 'name', 'summary', 'in_term', 'standing', 'versions'] as const;
+export const DATABASE_MEMBERS = ['base', 'name', 'summary', 'in_term', 'standing', 'open', 'versions'] as const;
 export const DATABASE_VERSION_MEMBERS = ['id', 'version', 'formats'] as const;
 export const DATABASE_FORMAT_SIZE_MEMBERS = ['format'] as const;
 export const DATABASE_METADATA_MEMBERS = ['id', 'updated', 'entries', 'schema'] as const;
 export const DB_CHECKSUMS_MEMBERS = ['md5', 'sha1', 'sha256', 'sha512'] as const;
-export const DOWNLOAD_MEMBERS = ['dataset_id', 'format', 'outcome', 'sample', 'created'] as const;
+export const DOWNLOAD_MEMBERS = ['dataset_id', 'format', 'outcome', 'sample', 'open', 'created'] as const;
 
 function isObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

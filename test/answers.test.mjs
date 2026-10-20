@@ -135,7 +135,7 @@ test('a readable answer still comes back', async () => {
     assert.deepEqual(await c.client.myEntitlement(), entitlement);
     const database = {
         base: 'vpn_ip', name: 'n', summary: 's', license_type: null, starts: null, expires: null, renews_at: null,
-        notice_due_at: null, in_term: false, standing: 'available', versions: [{ id: 'vpn_ip_v1', version: 1,
+        notice_due_at: null, in_term: false, standing: 'available', open: false, versions: [{ id: 'vpn_ip_v1', version: 1,
             formats: [{ format: 'mmdb', bytes: null }] }],
     };
     c = rawClient(body(JSON.stringify({ databases: [database] })));

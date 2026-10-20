@@ -68,6 +68,7 @@ test('the licensed catalogue answers the schema the client was generated from', 
             assert.equal(typeof d.base, 'string');
             assert.equal(typeof d.name, 'string');
             assert.equal(typeof d.in_term, 'boolean');
+            assert.equal(typeof d.open, 'boolean');
             assert.ok(['expired', 'licensed', 'unlicensed'].includes(d.standing),
                 `${d.base} carries an undocumented standing`);
             // `list` answers the WHOLE catalog, so an unlicensed family is a normal
