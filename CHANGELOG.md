@@ -2,6 +2,14 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.10.1 - 2026-10-23
+
+### Fixes
+
+- Check every member of every answer by its type, at any depth ([`d7001be`](https://github.com/vpndetection-io/sdk-nodejs/commit/d7001beea4e43e805389cc804b0067353252bc8d))
+- Refuse an OAuth integer member that is not a whole number ([`1fc4e93`](https://github.com/vpndetection-io/sdk-nodejs/commit/1fc4e93a3d259e5f477870484a6e593f232aefd7))
+- Refuse a key past U+00FF and a bad retry count where they are set ([`847865c`](https://github.com/vpndetection-io/sdk-nodejs/commit/847865c1633da5eb477ea166d62f36353442e586))
+
 ## 5.10.0 - 2026-10-20
 
 ### Features
