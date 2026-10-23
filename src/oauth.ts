@@ -412,7 +412,7 @@ interface Clock {
 }
 
 interface Member {
-    type: 'string' | 'number' | 'boolean' | 'string[]';
+    type: 'string' | 'integer' | 'boolean' | 'string[]';
     required?: true;
     /** The name on the wire, where it differs from the one surfaced. */
     wire?: string;
@@ -440,14 +440,14 @@ const DEVICE_AUTHORIZATION: Record<keyof DeviceAuthorization, Member> = {
     user_code: { type: 'string', required: true },
     verification_uri: { type: 'string', required: true },
     verification_uri_complete: { type: 'string' },
-    expires_in: { type: 'number', required: true },
-    interval: { type: 'number', required: true },
+    expires_in: { type: 'integer', required: true },
+    interval: { type: 'integer', required: true },
 };
 
 const TOKEN_RESPONSE: Record<keyof TokenResponse, Member> = {
     access_token: { type: 'string', required: true },
     token_type: { type: 'string', required: true },
-    expires_in: { type: 'number', required: true },
+    expires_in: { type: 'integer', required: true },
     refresh_token: { type: 'string' },
     scope: { type: 'string' },
     apikey_id: { type: 'string', wire: 'mslm:apikey_id' },
@@ -456,7 +456,7 @@ const TOKEN_RESPONSE: Record<keyof TokenResponse, Member> = {
 
 const CLIENT_REGISTRATION: Record<keyof ClientRegistration, Member> = {
     client_id: { type: 'string', required: true },
-    client_id_issued_at: { type: 'number', required: true },
+    client_id_issued_at: { type: 'integer', required: true },
     client_name: { type: 'string', required: true },
     redirect_uris: { type: 'string[]', required: true },
     grant_types: { type: 'string[]' },
@@ -492,7 +492,7 @@ function decode<T>(res: Res, members: Record<keyof T, Member>): T {
         }
         if (!hasType(value, member.type)) {
             throw new VPNDetectionError(
-                'server_error', `the answer's ${wire} is not a ${member.type}`, status,
+                'server_error', `the answer's ${wire} is not ${TYPE_NAMES[member.type]}`, status,
             );
         }
         out[name] = value;
@@ -523,9 +523,18 @@ function isObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+const TYPE_NAMES: Record<Member['type'], string> = {
+    'string': 'a string', 'integer': 'an integer', 'boolean': 'a boolean', 'string[]': 'a list of strings',
+};
+
+// Through 5.10.0 an integer member took any number, so an `expires_in` of 1.5 came
+// back as one (measured 2026-10-23), where the database answers refused it.
 function hasType(value: unknown, type: Member['type']): boolean {
     if (type === 'string[]') {
         return Array.isArray(value) && value.every((item) => typeof item === 'string');
+    }
+    if (type === 'integer') {
+        return Number.isInteger(value);
     }
     return typeof value === type;
 }

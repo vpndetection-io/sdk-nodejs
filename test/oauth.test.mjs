@@ -140,6 +140,11 @@ test('a 2xx that lacks a required member or does not parse is the ordinary error
             status: 200, body: { access_token: 'mo_at_x', token_type: 'Bearer', expires_in: '3600' },
             kind: 'server_error',
         },
+        // Through 5.10.0 an integer member took any number.
+        'expires_in of 1.5': {
+            status: 200, body: { access_token: 'mo_at_x', token_type: 'Bearer', expires_in: 1.5 },
+            kind: 'server_error',
+        },
         'not JSON': { status: 200, rawBody: '<html>', kind: 'server_error' },
     };
     for (const [name, reply] of Object.entries(cases)) {
@@ -275,6 +280,26 @@ test('register decodes on presence, and anything it cannot read is a server_erro
                 return;
             }
             assertOutcome(outcome, { ...c.expect, type: c.expect.outcome }, c.name);
+        });
+    }
+});
+
+// Through 5.10.0 `expires_in`, `interval` and `client_id_issued_at` took any number,
+// so an answer of 1.5 came back as one (measured 2026-10-23).
+test('an OAuth integer member that is not a whole number is a server_error with the status', async (t) => {
+    const cases = {
+        'expires_in of 1.5': [(c) => c.oauth.deviceAuthorization('vpndetection-cli'), 200, { ...DEVICE, expires_in: 1.5 }],
+        'interval of 0.5': [(c) => c.oauth.deviceAuthorization('vpndetection-cli'), 200, { ...DEVICE, interval: 0.5 }],
+        'client_id_issued_at of 1.5': [(c) => c.oauth.register(['http://127.0.0.1/cb']), 201, {
+            client_id: 'dcr_x', client_id_issued_at: 1.5, client_name: 'Example CLI',
+            redirect_uris: ['http://127.0.0.1/cb'], token_endpoint_auth_method: 'none',
+        }],
+    };
+    for (const [name, [call, status, body]] of Object.entries(cases)) {
+        await t.test(name, async () => {
+            const stub = oauthStub([{ status: status, body: body }]);
+            const err = await settle(call(oauthClient(stub, { retries: 0 })), stub.bound);
+            assertOutcome(err, { type: 'client', kind: 'server_error', status: status }, name);
         });
     }
 });
