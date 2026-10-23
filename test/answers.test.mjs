@@ -366,4 +366,39 @@ test('the key goes out trimmed, blanks are no key, and a control character is re
         assert.throws(() => new VPNDetection({ apiKey: key }), (err) => err.kind === 'bad_request', JSON.stringify(key));
     }
     assert.throws(() => new VPNDetection({ apiKey: 5 }), (err) => err.kind === 'bad_request');
+    // fetch refuses a header character past U+00FF, so through 5.10.0 such a key failed
+    // every call as a retried network error with nothing sent.
+    for (const key of ['k\u4e2d', 'k\u0100']) {
+        assert.throws(() => new VPNDetection({ apiKey: key }), (err) => err.kind === 'bad_request', JSON.stringify(key));
+    }
+    // A Latin-1 key goes out as its bytes, and is answered as any wrong key is.
+    const c = rawClient(answer, { apiKey: 'k\u00e9' });
+    await c.client.lookup(IP);
+    assert.equal(c.calls[0].auth, 'Bearer k\u00e9');
+});
+
+// Through 5.10.0 p-retry checked the count inside the call, so a negative, NaN or
+// non-number failed every call as `network` with p-retry's own message, and a
+// fraction ended a failing call as one too, a bogon answering any value.
+test('a retry count that is not a whole number from 0 is refused where it is set', async () => {
+    const answer = body(`{"ip":"${IP}","is_vpn":false}`);
+    for (const retries of [-1, 1.5, NaN, -Infinity, '2']) {
+        const name = String(retries);
+        assert.throws(() => new VPNDetection({ retries: retries }), (err) => err.kind === 'bad_request', name);
+        const c = rawClient(answer);
+        for (const [call, run] of [
+            ['lookup', () => c.client.lookup(IP, { retries: retries })],
+            ['a bogon', () => c.client.lookup('10.0.0.1', { retries: retries })],
+            ['myIp', () => c.client.myIp({ retries: retries })],
+            ['myEntitlement', () => c.client.myEntitlement({ retries: retries })],
+            ['lookupBatch', () => c.client.lookupBatch(['10.0.0.1'], { retries: retries })],
+        ]) {
+            await assert.rejects(run, (err) => err.kind === 'bad_request', `${call}, ${name}`);
+        }
+        assert.equal(c.calls.length, 0, name);
+    }
+    for (const retries of [0, 3, Infinity, null]) {
+        const c = rawClient(answer, { retries: retries });
+        await c.client.lookup(IP, { retries: retries });
+    }
 });

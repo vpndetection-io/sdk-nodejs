@@ -23,7 +23,7 @@ import {
     isBatch, isBatchError, isChecksumsResponse, isDatabaseList, isDatabaseMetadata, isDownloadList, isEntitlement,
     isLookup,
 } from './shapes.js';
-import { asError, checkTimeout, deadline, readable, unwrap, withRetry } from './transport.js';
+import { asError, checkRetries, checkTimeout, deadline, readable, unwrap, withRetry } from './transport.js';
 import { DATABASE_FORMATS, toResult, type Result } from './types.js';
 
 /**
@@ -71,7 +71,7 @@ export interface Options {
     cache?: CacheOptions | false;
     /** Concurrent batch requests - chunks of up to 1000 addresses - during a batch. Default 8. */
     concurrency?: number;
-    /** Retry attempts for a transient failure. Default 2. */
+    /** Retry attempts for a transient failure, a whole number from 0. Default 2. */
     retries?: number;
     /**
      * How long one request may take before it is abandoned, in milliseconds.
@@ -86,7 +86,7 @@ export interface Options {
 
 /** Per-call overrides for a single lookup. Anything omitted falls back to the client's setting. */
 export interface LookupOptions {
-    /** Retry attempts for a transient failure. */
+    /** Retry attempts for a transient failure, a whole number from 0. */
     retries?: number;
     /** How long one attempt may take before it is abandoned, in milliseconds. */
     timeoutMs?: number;
@@ -147,7 +147,7 @@ export class VPNDetection {
             ignoreFetchAbort: true,
         });
         this.limit = pLimit(options.concurrency ?? 8);
-        this.retries = options.retries ?? 2;
+        this.retries = checkRetries(options.retries) ?? 2;
         this.timeoutMs = checkTimeout(options.timeoutMs) ?? DEFAULT_TIMEOUT_MS;
         this.database = new DatabaseApi(this.client, this.retries, this.timeoutMs, fetchImpl);
         this.oauth = new OauthApi(this.client, this.retries, this.timeoutMs);
@@ -180,6 +180,7 @@ export class VPNDetection {
     async lookup(ip: string, options: LookupOptions = {}): Promise<Result> {
         // First, or a bogon and a cached address would answer any value.
         checkTimeout(options.timeoutMs);
+        checkRetries(options.retries);
         const addr = unmapped(ip);
         if (isBogon(addr)) {
             return bogonResult(addr);
@@ -214,7 +215,7 @@ export class VPNDetection {
      */
     async myIp(options: LookupOptions = {}): Promise<Result> {
         const timeoutMs = checkTimeout(options.timeoutMs) ?? this.timeoutMs;
-        return withRetry(options.retries ?? this.retries, async () => {
+        return withRetry(checkRetries(options.retries) ?? this.retries, async () => {
             const res = await deadline(timeoutMs, (signal) => lookupMyIp({
                 client: this.client, signal: signal,
             }));
@@ -242,7 +243,7 @@ export class VPNDetection {
      */
     async myEntitlement(options: LookupOptions = {}): Promise<Entitlement> {
         const timeoutMs = checkTimeout(options.timeoutMs) ?? this.timeoutMs;
-        return withRetry(options.retries ?? this.retries, async () => {
+        return withRetry(checkRetries(options.retries) ?? this.retries, async () => {
             const res = await deadline(timeoutMs, (signal) => myEntitlement({
                 client: this.client, signal: signal,
             }));
@@ -278,6 +279,7 @@ export class VPNDetection {
             );
         }
         checkTimeout(options.timeoutMs);
+        checkRetries(options.retries);
         const asked = [...new Set(ips)];
         const unique = [...new Set(asked.map(unmapped))];
         const out = new Map<string, Result | VPNDetectionError>();
@@ -411,6 +413,11 @@ function checkApiKey(apiKey: unknown): string | undefined {
     const key = apiKey.trim();
     if (/[\u0000-\u001f\u007f]/.test(key)) {
         throw new VPNDetectionError('bad_request', 'apiKey must not contain a control character');
+    }
+    // fetch sends a header as Latin-1 and refuses anything past it, so through 5.10.0
+    // such a key failed every call as a retried network error with nothing sent.
+    if (/[^\u0000-\u00ff]/.test(key)) {
+        throw new VPNDetectionError('bad_request', 'apiKey must not contain a character past U+00FF');
     }
     return key === '' ? undefined : key;
 }
