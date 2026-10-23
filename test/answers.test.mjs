@@ -147,6 +147,111 @@ test('a readable answer still comes back', async () => {
     assert.equal(c.calls.length, 1);
 });
 
+// Through 5.10.0 only presence was checked, so each of these came back as served
+// (measured 2026-10-23), where a number, a boolean or an object is promised.
+test('a member of the wrong type is a retried server_error carrying its status', async () => {
+    const lookup = { ip: IP, is_vpn: true };
+    const location = {
+        continent: 'EU', continent_name: 'Europe', country: 'DE', country_name: 'Germany', timezone: 'Europe/Berlin',
+        currency_code: 'EUR', currency_name: 'Euro', currency_symbol: '€', flag_emoji: 'x', flag_unicode: 'x',
+    };
+    const entitlement = {
+        org_id: 'o', apikey: { id: 'a', expires: null, allowed_cidrs: [] }, plan: { key: 'max', tier: 'max' },
+        usage: { requests: 1, quota: 2, hard_limit: null, window_start: 's', window_end: 'e' },
+    };
+    const version = { id: 'vpn_ip_v1', version: 1, formats: [{ format: 'csvgz', bytes: 760 }], sample_formats: ['csvgz'] };
+    const database = {
+        base: 'vpn_ip', name: 'n', summary: 's', license_type: null, starts: null, expires: null, renews_at: null,
+        notice_due_at: null, in_term: true, standing: 'licensed', open: false, versions: [version],
+    };
+    const metadata = {
+        id: 'vpn_ip_v1', updated: '2026-09-04', entries: 1,
+        schema: { csvgz: [{ name: 'ip', type: 'string' }] }, size: { csvgz: 760 },
+    };
+    const download = {
+        dataset_id: 'vpn_ip_v1', format: 'csvgz', outcome: 'ok', sample: false, open: false, bytes: 760,
+        http_status: 302, apikey_id: null, client_ip: null, user_agent: null, created: '2026-09-04T10:00:00Z',
+    };
+    const look = (c) => c.lookup(IP);
+    const list = (c) => c.database.list();
+    const meta = (c) => c.database.metadata('vpn_ip_v1');
+    const ent = (c) => c.myEntitlement();
+    const cases = {
+        'is_hosting as "yes"': [look, { ...lookup, is_hosting: 'yes' }],
+        'a vpn detail of "x"': [look, { ...lookup, vpn: 'x' }],
+        'a vpn provider of 1': [look, { ...lookup, vpn: { provider: 1 } }],
+        'a last_seen of 5': [look, { ...lookup, hosting: { last_seen: 5 } }],
+        'dcproxy hits of "3"': [look, { ...lookup, dcproxy: { hits: '3' } }],
+        'resproxy hits of 1.5': [look, { ...lookup, resproxy: { hits: 1.5 } }],
+        'pubproxy num_ports of "2"': [look, { ...lookup, pubproxy: { num_ports: '2' } }],
+        'pubproxy entry of "yes"': [look, { ...lookup, pubproxy: { entry: 'yes' } }],
+        'pubproxy protocols of [1]': [look, { ...lookup, pubproxy: { protocols: [1] } }],
+        'pubproxy protocols of [null]': [look, { ...lookup, pubproxy: { protocols: [null] } }],
+        'a location country of 1': [look, { ...lookup, location: { ...location, country: 1 } }],
+        'a location without its members': [look, { ...lookup, location: {} }],
+        'an asn of "5"': [look, { ...lookup, asn: { asn: '5', name: 'n', domain: 'd', type: 't', prefix: 'p' } }],
+        'myIp with is_tor as 0': [(c) => c.myIp(), { ...lookup, is_tor: 0 }],
+        'requests of "5"': [ent, { ...entitlement, usage: { ...entitlement.usage, requests: '5' } }],
+        'a hard_limit of "5"': [ent, { ...entitlement, usage: { ...entitlement.usage, hard_limit: '5' } }],
+        'a tier of 1': [ent, { ...entitlement, plan: { key: 'max', tier: 1 } }],
+        'allowed_cidrs of [1]': [ent, { ...entitlement, apikey: { ...entitlement.apikey, allowed_cidrs: [1] } }],
+        'a version of "3"': [list, { databases: [{ ...database, versions: [{ ...version, version: '3' }] }] }],
+        'a version of "x"': [list, { databases: [{ ...database, versions: [{ ...version, version: 'x' }] }] }],
+        'open as "yes"': [list, { databases: [{ ...database, open: 'yes' }] }],
+        'a format size of "760"': [list, {
+            databases: [{ ...database, versions: [{ ...version, formats: [{ format: 'csvgz', bytes: '760' }] }] }],
+        }],
+        'sample_formats of [null]': [list, { databases: [{ ...database, versions: [{ ...version, sample_formats: [null] }] }] }],
+        'entries of "1"': [meta, { ...metadata, entries: '1' }],
+        'a size of "760"': [meta, { ...metadata, size: { csvgz: '760' } }],
+        'a column name of 1': [meta, { ...metadata, schema: { csvgz: [{ name: 1, type: 'string' }] } }],
+        'a null sample row': [meta, { ...metadata, sample: { csvgz: [null] } }],
+        'an md5 of 7': [(c) => c.database.checksums('vpn_ip_v1', 'csvgz'),
+            { id: 'vpn_ip_v1', format: 'csvgz', checksums: { md5: 7, sha1: 's', sha256: 's', sha512: 's' } }],
+        'bytes of "760"': [(c) => c.database.downloads(), { downloads: [{ ...download, bytes: '760' }] }],
+        'a client_ip of 5': [(c) => c.database.downloads(), { downloads: [{ ...download, client_ip: 5 }] }],
+    };
+    for (const [name, [call, answer]] of Object.entries(cases)) {
+        const c = rawClient(body(JSON.stringify(answer)));
+        await assert.rejects(() => call(c.client), (err) => {
+            assert.equal(err.kind, 'server_error', `${name}: ${err.message}`);
+            assert.equal(err.status, 200, name);
+            return true;
+        });
+        assert.equal(c.calls.length, 3, `${name} is retried`);
+    }
+    // A batch entry it cannot read is that address's error alone, unretried.
+    const c = rawClient(body(JSON.stringify({ results: { [IP]: { ...lookup, dcproxy: { hits: '3' } } }, errors: {} })));
+    const out = await c.client.lookupBatch([IP]);
+    assert.equal(out.get(IP).kind, 'server_error');
+    assert.equal(c.calls.length, 1);
+});
+
+// `checksums` hands back the digests alone, so through 5.10.0 nothing read `id` or
+// `format`, and an answer without either, or with one null or of another type, came back.
+test('a checksum answer without its id or format is a retried server_error', async () => {
+    const answer = { id: 'vpn_ip_v1', format: 'csvgz', checksums: { md5: 'a', sha1: 'b', sha256: 'c', sha512: 'd' } };
+    const cases = {
+        'no id': { ...answer, id: undefined },
+        'an id of null': { ...answer, id: null },
+        'an id of 7': { ...answer, id: 7 },
+        'no format': { ...answer, format: undefined },
+        'a format of null': { ...answer, format: null },
+        'a format of 7': { ...answer, format: 7 },
+    };
+    for (const [name, served] of Object.entries(cases)) {
+        const c = rawClient(body(JSON.stringify(served)));
+        await assert.rejects(() => c.client.database.checksums('vpn_ip_v1', 'csvgz'), (err) => {
+            assert.equal(err.kind, 'server_error', `${name}: ${err.message}`);
+            assert.equal(err.status, 200, name);
+            return true;
+        });
+        assert.equal(c.calls.length, 3, `${name} is retried`);
+    }
+    const c = rawClient(body(JSON.stringify(answer)));
+    assert.deepEqual(await c.client.database.checksums('vpn_ip_v1', 'csvgz'), answer.checksums);
+});
+
 // The lists are hand-written, so a member the spec makes required, and never null,
 // must not be able to go unchecked: read the generated types and compare.
 test('each checked member list is every required member of its generated type', async () => {
@@ -170,6 +275,34 @@ test('each checked member list is every required member of its generated type', 
     assert.deepEqual([...shapes.DATABASE_METADATA_MEMBERS].sort(), required('DatabaseMetadata'));
     assert.deepEqual([...shapes.DB_CHECKSUMS_MEMBERS].sort(), required('DbChecksums'));
     assert.deepEqual([...shapes.DOWNLOAD_MEMBERS].sort(), required('Download'));
+    assert.deepEqual([...shapes.LOCATION_MEMBERS].sort(), required('Location'));
+    assert.deepEqual([...shapes.ASN_MEMBERS].sort(), required('Asn'));
+    assert.deepEqual([...shapes.DATABASE_METADATA_COLUMN_MEMBERS].sort(), required('DatabaseMetadataColumn'));
+});
+
+// Each type table names every member of its generated type, optional and nullable
+// ones included, so a member the spec adds is typed before it can come back unread.
+test('each type table covers every member of its generated type', async () => {
+    const shapes = await import('../dist/shapes.js');
+    const types = readFileSync(new URL('../src/generated/types.gen.ts', import.meta.url), 'utf8');
+    const members = (name) => {
+        const block = types.split(`export type ${name} = {\n`)[1].split('\n};')[0];
+        return [...block.matchAll(/^ {4}([a-z][a-z0-9_]*)\??: /gm)].map((m) => m[1]).sort();
+    };
+    const tables = {
+        LookupResponse: shapes.LOOKUP_TYPES, VpnDetail: shapes.VPN_DETAIL_TYPES, ClassDetail: shapes.CLASS_DETAIL_TYPES,
+        ProxyDetail: shapes.PROXY_DETAIL_TYPES, PubproxyDetail: shapes.PUBPROXY_DETAIL_TYPES,
+        Location: shapes.LOCATION_TYPES, Asn: shapes.ASN_TYPES, BatchLookupError: shapes.BATCH_ERROR_TYPES,
+        Entitlement: shapes.ENTITLEMENT_TYPES, EntitlementApikey: shapes.ENTITLEMENT_APIKEY_TYPES,
+        EntitlementPlan: shapes.ENTITLEMENT_PLAN_TYPES, EntitlementUsage: shapes.ENTITLEMENT_USAGE_TYPES,
+        Database: shapes.DATABASE_TYPES, DatabaseVersion: shapes.DATABASE_VERSION_TYPES,
+        DatabaseFormatSize: shapes.DATABASE_FORMAT_SIZE_TYPES, DatabaseMetadata: shapes.DATABASE_METADATA_TYPES,
+        DatabaseMetadataColumn: shapes.DATABASE_METADATA_COLUMN_TYPES, DbChecksums: shapes.DB_CHECKSUMS_TYPES,
+        Download: shapes.DOWNLOAD_TYPES,
+    };
+    for (const [name, table] of Object.entries(tables)) {
+        assert.deepEqual(Object.keys(table).sort(), members(name), name);
+    }
 });
 
 // Digits, or one of RFC 9110's three date forms in GMT, and nothing else.
