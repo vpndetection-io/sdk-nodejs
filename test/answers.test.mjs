@@ -129,7 +129,7 @@ test('a readable answer still comes back', async () => {
     assert.equal((await c.client.lookup(IP)).isVpn, true);
     const entitlement = {
         org_id: 'o', apikey: { id: 'k', expires: null, allowed_cidrs: [] }, plan: { key: 'max', tier: 'max' },
-        usage: { requests: 1, quota: 10, hard_limit: null, window_start: 's', window_end: 'e' },
+        usage: { requests: 1, quota: 10, hard_limit: null, window_start: '2026-10-01T00:00:00Z', window_end: '2026-11-01T00:00:00Z' },
     };
     c = rawClient(body(JSON.stringify(entitlement)));
     assert.deepEqual(await c.client.myEntitlement(), entitlement);
@@ -157,7 +157,7 @@ test('a member of the wrong type is a retried server_error carrying its status',
     };
     const entitlement = {
         org_id: 'o', apikey: { id: 'a', expires: null, allowed_cidrs: [] }, plan: { key: 'max', tier: 'max' },
-        usage: { requests: 1, quota: 2, hard_limit: null, window_start: 's', window_end: 'e' },
+        usage: { requests: 1, quota: 2, hard_limit: null, window_start: '2026-10-01T00:00:00Z', window_end: '2026-11-01T00:00:00Z' },
     };
     const version = { id: 'vpn_ip_v1', version: 1, formats: [{ format: 'csvgz', bytes: 760 }], sample_formats: ['csvgz'] };
     const database = {
@@ -250,6 +250,108 @@ test('a checksum answer without its id or format is a retried server_error', asy
     }
     const c = rawClient(body(JSON.stringify(answer)));
     assert.deepEqual(await c.client.database.checksums('vpn_ip_v1', 'csvgz'), answer.checksums);
+});
+
+// RFC 3339 alone, on a day that exists. Through 5.10.1 a date was checked as a
+// string alone, so every one of these came back as served (measured 2026-10-26).
+test('a date or date-time that is not RFC 3339 is a retried server_error', async () => {
+    const dateTimes = ['2026-10-05', '2026-10-05T10:00:00', '2026-10-05T10:00:00+05', '2026-10-05T10:00Z',
+        '2026-10-05T10:00:00+0500', '2026-10-05T10:00:00+05:00:30', '2026-10-05T24:00:00Z', '2026-10-05T10:60:00Z',
+        '2026-10-05T10:00:60Z', '2026-02-30T10:00:00Z', '2026-10-05T10:00:00+24:00', '2026-10-05T10:00:00+05:60',
+        ' 2026-10-05T10:00:00Z', '2026-10-05T10:00:00Z ', '2026-10-05 10:00:00Z', '2026-10-5T10:00:00Z',
+        '+12026-10-05T10:00:00Z', '2026-10-05T10:00:00.Z', '20261005T100000Z', 'x', 'tomorrow', 'monday', ''];
+    const dates = ['2026-10-05T10:00:00', '2026-10-05T10:00:00Z', '2026-02-30', '2026-13-01', '2026-10-5', '20261005',
+        '2026-W41-1', ' 2026-10-05', '+12026-10-05', 'x', 'tomorrow', 'monday', ''];
+    const lookup = { ip: IP, is_vpn: true };
+    const entitlement = {
+        org_id: 'o', apikey: { id: 'a', expires: null, allowed_cidrs: [] }, plan: { key: 'max', tier: 'max' },
+        usage: { requests: 1, quota: 2, hard_limit: null, window_start: '2026-10-01T00:00:00Z', window_end: '2026-11-01T00:00:00Z' },
+    };
+    const database = {
+        base: 'vpn_ip', name: 'n', summary: 's', license_type: null, starts: null, expires: null, renews_at: null,
+        notice_due_at: null, in_term: true, standing: 'licensed', open: false,
+        versions: [{ id: 'vpn_ip_v1', version: 1, formats: [{ format: 'csvgz', bytes: 760 }] }],
+    };
+    const metadata = { id: 'vpn_ip_v1', updated: '2026-09-04', entries: 1, schema: { csvgz: [{ name: 'ip', type: 'string' }] } };
+    const download = {
+        dataset_id: 'vpn_ip_v1', format: 'csvgz', outcome: 'ok', sample: false, open: false, created: '2026-09-04T10:00:00Z',
+    };
+    const look = (c) => c.lookup(IP);
+    const ent = (c) => c.myEntitlement();
+    const list = (c) => c.database.list();
+    const cases = [];
+    for (const value of dateTimes) {
+        cases.push([`starts ${value}`, list, { databases: [{ ...database, starts: value }] }]);
+        cases.push([`renews_at ${value}`, list, { databases: [{ ...database, renews_at: value }] }]);
+        cases.push([`created ${value}`, (c) => c.database.downloads(), { downloads: [{ ...download, created: value }] }]);
+        cases.push([`window_end ${value}`, ent, { ...entitlement, usage: { ...entitlement.usage, window_end: value } }]);
+        cases.push([`expires ${value}`, ent, { ...entitlement, apikey: { ...entitlement.apikey, expires: value } }]);
+    }
+    for (const value of dates) {
+        cases.push([`updated ${value}`, (c) => c.database.metadata('vpn_ip_v1'), { ...metadata, updated: value }]);
+        cases.push([`vpn last_seen ${value}`, look, { ...lookup, vpn: { last_seen: value } }]);
+        cases.push([`hosting last_seen ${value}`, look, { ...lookup, hosting: { last_seen: value } }]);
+        cases.push([`dcproxy first_seen ${value}`, look, { ...lookup, dcproxy: { first_seen: value } }]);
+        cases.push([`pubproxy last_seen ${value}`, look, { ...lookup, pubproxy: { last_seen: value } }]);
+    }
+    for (const [name, call, served] of cases) {
+        const c = rawClient(body(JSON.stringify(served)), { retries: 1 });
+        await assert.rejects(() => call(c.client), (err) => {
+            assert.equal(err.kind, 'server_error', `${name}: ${err.message}`);
+            assert.equal(err.status, 200, name);
+            return true;
+        });
+        assert.equal(c.calls.length, 2, `${name} is retried`);
+    }
+    for (const value of ['2026-10-05T10:00:00Z', '2026-10-05t10:00:00.5z', '2026-10-05T10:00:00-00:00',
+        '2026-10-05T10:00:00.123456789+05:30', '2024-02-29T23:59:59+23:59', '0001-01-01T00:00:00Z']) {
+        const c = rawClient(body(JSON.stringify({ databases: [{ ...database, starts: value }] })));
+        assert.equal((await c.client.database.list())[0].starts, value, value);
+    }
+    for (const value of ['2026-10-05', '2024-02-29', '0099-12-31']) {
+        const c = rawClient(body(JSON.stringify({ ...lookup, hosting: { last_seen: value } })));
+        assert.equal((await c.client.lookup(IP)).hosting.last_seen, value, value);
+    }
+});
+
+// Each `date` and `date-time` kind is the spec's `format` for that member, and no
+// other member carries one, so a date the spec adds is checked before it ships.
+test('each date kind is the format the spec names', async () => {
+    const shapes = await import('../dist/shapes.js');
+    const spec = readFileSync(new URL('../spec/openapi.yaml', import.meta.url), 'utf8');
+    const formats = new Map();
+    let schema = null;
+    let member = null;
+    for (const line of spec.split('\n').slice(spec.split('\n').indexOf('components:'))) {
+        schema = /^ {4}([A-Za-z][A-Za-z0-9]*):$/.exec(line)?.[1] ?? schema;
+        member = /^ {8}([a-z_]+):$/.exec(line)?.[1] ?? member;
+        const format = /^ {10}format: (date|date-time)$/.exec(line)?.[1];
+        if (format !== undefined) {
+            formats.set(`${schema}.${member}`, format);
+        }
+    }
+    const tables = {
+        VpnDetail: shapes.VPN_DETAIL_TYPES, ClassDetail: shapes.CLASS_DETAIL_TYPES, ProxyDetail: shapes.PROXY_DETAIL_TYPES,
+        PubproxyDetail: shapes.PUBPROXY_DETAIL_TYPES, EntitlementApikey: shapes.ENTITLEMENT_APIKEY_TYPES,
+        EntitlementUsage: shapes.ENTITLEMENT_USAGE_TYPES, Database: shapes.DATABASE_TYPES,
+        DatabaseMetadata: shapes.DATABASE_METADATA_TYPES, Download: shapes.DOWNLOAD_TYPES,
+        LookupResponse: shapes.LOOKUP_TYPES, Location: shapes.LOCATION_TYPES, Asn: shapes.ASN_TYPES,
+        Entitlement: shapes.ENTITLEMENT_TYPES, DatabaseVersion: shapes.DATABASE_VERSION_TYPES,
+    };
+    const kinds = new Map();
+    for (const [name, table] of Object.entries(tables)) {
+        for (const [m, kind] of Object.entries(table)) {
+            if (kind === 'date' || kind === 'date-time') {
+                kinds.set(`${name}.${m}`, kind);
+            }
+        }
+    }
+    for (const [at, format] of formats) {
+        if (tables[at.split('.')[0]] !== undefined) {
+            assert.equal(kinds.get(at), format, at);
+        }
+    }
+    assert.equal(kinds.size, [...formats.keys()].filter((at) => tables[at.split('.')[0]] !== undefined).length);
 });
 
 // The lists are hand-written, so a member the spec makes required, and never null,

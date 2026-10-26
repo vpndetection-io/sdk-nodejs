@@ -208,7 +208,7 @@ const DATABASE = {
 };
 const DOWNLOAD = {
     dataset_id: 'vpn_ip_extended_v1', format: 'mmdb', outcome: 'ok', sample: false, open: false, bytes: null,
-    http_status: null, apikey_id: null, client_ip: null, user_agent: null, created: 't',
+    http_status: null, apikey_id: null, client_ip: null, user_agent: null, created: '2026-09-04T10:00:00Z',
 };
 
 test('database responses are unwrapped at the right depth', async () => {
@@ -220,7 +220,7 @@ test('database responses are unwrapped at the right depth', async () => {
         },
         '/api/v1/database/list': { databases: [DATABASE] },
         '/api/v1/database/downloads': { downloads: [DOWNLOAD] },
-        '/api/v1/database/metadata': { id: 'vpn_ip_extended_v1', updated: 't', entries: 1, schema: {} },
+        '/api/v1/database/metadata': { id: 'vpn_ip_extended_v1', updated: '2026-09-04', entries: 1, schema: {} },
     };
     const fetchFn = async (input) => {
         const url = new URL(typeof input === 'string' ? input : input.url);
