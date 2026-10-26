@@ -2,6 +2,13 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.10.2 - 2026-10-26
+
+### Fixes
+
+- Re-pin the spec to 2026.10.25: Retry-After on myip's 429 ([`fee63ab`](https://github.com/vpndetection-io/sdk-nodejs/commit/fee63ab77e04c91a6dd984e488dbc5b85b8537f1))
+- Refuse a date that is not RFC 3339 ([`960f1b6`](https://github.com/vpndetection-io/sdk-nodejs/commit/960f1b6cca92ec9ae66de400220f8b54f2438c15))
+
 ## 5.10.1 - 2026-10-23
 
 ### Fixes
