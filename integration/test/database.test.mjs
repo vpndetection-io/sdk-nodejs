@@ -4,7 +4,7 @@
 //
 // The transfer is budgeted before it starts. `metadata` publishes a size per
 // format, and that size is checked against the ceiling below FIRST, so a
-// mistaken dataset id can never quietly pull one of the gigabyte datasets
+// mistaken dataset ID can never quietly pull one of the gigabyte datasets
 // through CI.
 
 import assert from 'node:assert/strict';
@@ -36,7 +36,7 @@ const FORMAT = 'csvgz';
 // tripping it means the suite is pointed somewhere unintended, which is exactly
 // when a transfer must not go ahead.
 const CEILING = 8 * 1024 * 1024;
-// A real catalog id the max organization holds no license for.
+// A real catalog ID the max organization holds no license for.
 const UNLICENSED_ID = 'hosting_ip_v1';
 
 const facts = [];
@@ -83,7 +83,7 @@ test('the licensed catalogue answers the schema the client was generated from', 
                 licensed.push(d.base);
             }
             // The point of the family shape: a license covers the family, and
-            // these are the ids the download and checksum methods take. Before
+            // these are the IDs the download and checksum methods take. Before
             // the spec was corrected this list did not exist, so list() could
             // not tell a caller what to download.
             assert.ok(Array.isArray(d.versions) && d.versions.length > 0,
