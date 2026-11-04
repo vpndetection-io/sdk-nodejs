@@ -386,6 +386,45 @@ test('pollDeviceToken waits, widens and ends as the corpus says', async (t) => {
     }
 });
 
+// No corpus case, whose clock spends exactly what each wait asks: setTimeout wakes
+// before performance.now() has moved its delay, so through 5.10.2 a wait cut to
+// the deadline, or ending at it, was often followed by one more request.
+test('a wait that runs to the deadline is followed by no request, whenever the timer wakes', async (t) => {
+    for (const [name, device] of [
+        ['cut to the deadline', { ...DEVICE, expires_in: 3, interval: 5 }],
+        ['ending at the deadline', { ...DEVICE, expires_in: 3, interval: 3 }],
+    ]) {
+        await t.test(name, async () => {
+            const stub = oauthStub([{ status: 400, body: { error: 'authorization_pending' } }]);
+            const client = oauthClient(stub);
+            const waits = fakeClock(client, stub.bound, 0.5);
+
+            const outcome = await settle(client.oauth.pollDeviceToken('vpndetection-cli', device), stub.bound);
+
+            assert.ok(outcome instanceof OauthExpiredTokenError, String(outcome));
+            assert.equal(outcome.status, undefined, 'a local expiry carries no status');
+            assert.equal(stub.requests.length, 0, 'requests sent');
+            assert.deepEqual(waits, [3]);
+        });
+    }
+});
+
+// No corpus case: an expiry that is not a number, as a device built by hand can
+// carry, leaves the interval in charge. Taking the lesser of the two made every
+// wait NaN, which setTimeout runs as 1 ms, so through 5.10.2 the poll asked
+// back to back.
+test('an expiry that is not a number leaves the interval in charge', async () => {
+    const stub = oauthStub([{ status: 400, body: { error: 'access_denied' } }]);
+    const client = oauthClient(stub);
+    const waits = fakeClock(client, stub.bound);
+
+    const outcome = await settle(client.oauth.pollDeviceToken('vpndetection-cli',
+        { ...DEVICE, expires_in: NaN, interval: 3 }), stub.bound);
+
+    assert.ok(outcome instanceof OauthAccessDeniedError, String(outcome));
+    assert.deepEqual(waits, [3]);
+});
+
 // No corpus case: the handle has to stop the real wait before the first request.
 test('aborting a poll during its first wait settles at once, with the reason', async () => {
     const stub = oauthStub([{ status: 400, body: { error: 'authorization_pending' } }], 1);
@@ -477,7 +516,9 @@ function oauthStub(replies, limit = LOOP_BOUND, bound = loopBound()) {
 }
 
 // Replaces the poll's sleep and clock together, recording each wait in seconds.
-function fakeClock(client, bound) {
+// `short` wakes each wait of at least 1 ms that many milliseconds early, as
+// setTimeout does against performance.now().
+function fakeClock(client, bound, short = 0) {
     const waits = [];
     let elapsed = 0;
     let reads = 0;
@@ -494,7 +535,7 @@ function fakeClock(client, bound) {
                 return bound.trip(`waited more than ${LOOP_BOUND} times`);
             }
             waits.push(ms / 1000);
-            elapsed += ms;
+            elapsed += ms >= 1 ? ms - short : ms;
         },
     };
     return waits;
