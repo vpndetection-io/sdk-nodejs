@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.10.3 - 2026-11-04
+
+### Fixes
+
+- Send no poll at the deadline, and none back to back without an expiry ([`ddaeb72`](https://github.com/vpndetection-io/sdk-nodejs/commit/ddaeb7272ea7f98c11036af4e8c795ccb86f14bb))
+
 ## 5.10.2 - 2026-10-26
 
 ### Fixes
