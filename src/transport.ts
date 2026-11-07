@@ -83,6 +83,25 @@ export function checkRetries(retries: number | null | undefined): number | undef
     return retries;
 }
 
+/**
+ * How many batch requests may be in flight, refused where it is set, on the
+ * client or the call: through 5.10.3 the client handed any value to p-limit,
+ * which threw its own bare TypeError (measured 2026-11-07). `Infinity` is
+ * p-limit's own unbounded count, and `null` reads as unset.
+ */
+export function checkConcurrency(concurrency: number | null | undefined): number | undefined {
+    if (concurrency === undefined || concurrency === null) {
+        return undefined;
+    }
+    if (!(typeof concurrency === 'number' && concurrency >= 1
+        && (Number.isInteger(concurrency) || concurrency === Infinity))) {
+        throw new VPNDetectionError(
+            'bad_request', `concurrency must be a whole number of at least 1, got ${String(concurrency)}`,
+        );
+    }
+    return concurrency;
+}
+
 export async function deadline<T>(
     timeoutMs: number, fn: (signal: AbortSignal) => Promise<T>, cancel?: AbortSignal,
 ): Promise<T> {

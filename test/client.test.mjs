@@ -102,6 +102,28 @@ test('a per-call concurrency below 1 is refused before any request', async () =>
     assert.equal(calls, 0);
 });
 
+// Through 5.10.3 the constructor handed any value to p-limit, which threw its own
+// bare TypeError for each of these (measured 2026-11-07).
+test('a client concurrency that is not a whole number from 1 is refused where it is set', () => {
+    for (const concurrency of [0, -1, 0.5, 1.5, NaN, 'x', '', '2', {}, [2]]) {
+        assert.throws(() => new VPNDetection({ concurrency: concurrency }), (err) => {
+            assert.ok(err instanceof VPNDetectionError, `${String(concurrency)}: wrong error type`);
+            assert.equal(err.kind, 'bad_request', `${String(concurrency)}`);
+            assert.match(err.message, /concurrency/, `${String(concurrency)}`);
+            return true;
+        });
+    }
+});
+
+test('a null concurrency reads as unset, on the client and per call', async () => {
+    const t = concurrencyTrackingFetch();
+    const client = new VPNDetection({ fetch: t.fetch, cache: false, concurrency: null });
+    await client.lookupBatch(addrs, { concurrency: null });
+    // Seven chunks, all in flight under the default of 8.
+    assert.equal(t.state.calls, 7);
+    assert.equal(t.state.peak, 7);
+});
+
 test('retries are configurable per call', async () => {
     let calls = 0;
     const fetchFn = async () => {

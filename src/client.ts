@@ -23,7 +23,9 @@ import {
     isBatch, isBatchError, isChecksumsResponse, isDatabaseList, isDatabaseMetadata, isDownloadList, isEntitlement,
     isLookup,
 } from './shapes.js';
-import { asError, checkRetries, checkTimeout, deadline, readable, unwrap, withRetry } from './transport.js';
+import {
+    asError, checkConcurrency, checkRetries, checkTimeout, deadline, readable, unwrap, withRetry,
+} from './transport.js';
 import { DATABASE_FORMATS, toResult, type Result } from './types.js';
 
 /**
@@ -69,7 +71,10 @@ export interface Options {
     baseUrl?: string;
     /** Pass `false` to disable caching. */
     cache?: CacheOptions | false;
-    /** Concurrent batch requests - chunks of up to 1000 addresses - during a batch. Default 8. */
+    /**
+     * Concurrent batch requests - chunks of up to 1000 addresses - during a
+     * batch, a whole number from 1. Default 8.
+     */
     concurrency?: number;
     /** Retry attempts for a transient failure, a whole number from 0. Default 2. */
     retries?: number;
@@ -146,7 +151,7 @@ export class VPNDetection {
             // An eviction must not fail the callers awaiting a request.
             ignoreFetchAbort: true,
         });
-        this.limit = pLimit(options.concurrency ?? 8);
+        this.limit = pLimit(checkConcurrency(options.concurrency) ?? 8);
         this.retries = checkRetries(options.retries) ?? 2;
         this.timeoutMs = checkTimeout(options.timeoutMs) ?? DEFAULT_TIMEOUT_MS;
         this.database = new DatabaseApi(this.client, this.retries, this.timeoutMs, fetchImpl);
@@ -264,20 +269,14 @@ export class VPNDetection {
      * error as its value, so one bad entry cannot lose the rest of the answers:
      * the API reports a per-entry failure with the status the single lookup
      * would have answered, and a chunk that fails as a whole marks every
-     * address in it. A per-call `concurrency` below 1 is refused as
-     * `bad_request` before anything is sent. An IPv4-mapped address is looked
+     * address in it. A per-call `concurrency` that is not a whole number from 1
+     * is refused as `bad_request` before anything is sent. An IPv4-mapped address is looked
      * up as the IPv4 address it carries, and its answer keyed as you passed it.
      */
     async lookupBatch(
         ips: Iterable<string>, options: BatchOptions = {},
     ): Promise<Map<string, Result | VPNDetectionError>> {
-        const concurrency = options.concurrency;
-        if (concurrency !== undefined && !(concurrency >= 1 && (Number.isInteger(concurrency)
-            || concurrency === Infinity))) {
-            throw new VPNDetectionError(
-                'bad_request', `concurrency must be a whole number of at least 1, got ${concurrency}`,
-            );
-        }
+        const concurrency = checkConcurrency(options.concurrency);
         checkTimeout(options.timeoutMs);
         checkRetries(options.retries);
         const asked = [...new Set(ips)];
