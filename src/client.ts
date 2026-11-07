@@ -62,6 +62,16 @@ export interface DownloadsOptions {
     timeoutMs?: number;
 }
 
+export interface DownloadOptions {
+    /**
+     * One build of the dataset, by the name a `database.updated` webhook gives
+     * it, so the file is the one whose `sha256` the webhook carries. Without
+     * it, the build that is live. A build is kept 7 days; one pruned since is
+     * a `bad_request` with status 410.
+     */
+    build?: string;
+}
+
 export interface Options {
     /**
      * Your API key. Omit it entirely to use the free tier, which answers
@@ -495,12 +505,15 @@ export class DatabaseApi {
      * runs to gigabytes; the link authorizes the START of a transfer, so one
      * already running is not interrupted when it lapses.
      */
-    async downloadUrl(id: string, format: DatabaseFormat): Promise<string> {
+    async downloadUrl(
+        id: string, format: DatabaseFormat, options: DownloadOptions = {},
+    ): Promise<string> {
         assertFormat(format);
+        const build = options.build ?? undefined;
         return withRetry(this.retries, async () => {
             const res = await deadline(this.timeoutMs, (signal) => downloadRedirect({
                 client: this.client,
-                query: { id: id, format: format },
+                query: { id: id, format: format, ...(build === undefined ? {} : { build: build }) },
                 redirect: 'manual',
                 signal: signal,
             } as never));
@@ -536,8 +549,9 @@ export class DatabaseApi {
      */
     async download(
         id: string, format: DatabaseFormat, destination: DownloadDestination,
+        options: DownloadOptions = {},
     ): Promise<number> {
-        const res = await this.fetchDatabaseFile(id, format);
+        const res = await this.fetchDatabaseFile(id, format, options);
         if (res.body === null) {
             throw new VPNDetectionError(
                 'server_error', 'object storage answered with no body', res.status,
@@ -585,16 +599,20 @@ export class DatabaseApi {
      * at the small end, where the bytes are going straight into a parser; use
      * `download` for anything you have not measured.
      */
-    async downloadBytes(id: string, format: DatabaseFormat): Promise<Uint8Array> {
-        const res = await this.fetchDatabaseFile(id, format);
+    async downloadBytes(
+        id: string, format: DatabaseFormat, options: DownloadOptions = {},
+    ): Promise<Uint8Array> {
+        const res = await this.fetchDatabaseFile(id, format, options);
         return new Uint8Array(await res.arrayBuffer());
     }
 
     // Follows the 302 as a SECOND, unauthenticated request: the presigned URL
     // carries its own authorization, so forwarding the API key would hand a
     // credential to a host that has no business holding it.
-    private async fetchDatabaseFile(id: string, format: DatabaseFormat): Promise<Response> {
-        const url = await this.downloadUrl(id, format);
+    private async fetchDatabaseFile(
+        id: string, format: DatabaseFormat, options: DownloadOptions,
+    ): Promise<Response> {
+        const url = await this.downloadUrl(id, format, options);
         return withRetry(this.retries, async () => {
             const res = await this.fetchImpl(url);
             if (!res.ok) {

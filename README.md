@@ -183,6 +183,13 @@ const bytes = await client.database.downloadBytes('cdn_ip_v1', 'csvgz');
 
 `downloadBytes` holds the whole file in memory, and the catalog runs from `cdn_ip_v1` at 10 KB to `resproxy_ip_90d_v1` at 1.79 GB, so use `download` for anything you have not measured.
 
+Each of the three takes the build a `database.updated` webhook names, so the file is the one whose `sha256` the webhook carries rather than whatever is live by the time you ask. Without it you get the live build. A build is kept 7 days, and one pruned since is a `bad_request` with status 410:
+
+```js
+const { dataset, build } = event.data;  // a database.updated webhook's
+await client.database.download(dataset, 'mmdb', `./${dataset}.mmdb`, { build: build });
+```
+
 The formats are `csvgz` and `mmdb`, exported as `DATABASE_FORMATS` for a caller that needs to validate or enumerate rather than switch — `STANDINGS` and `LICENSE_TYPES` likewise. Anything else is refused before the request leaves, as a `bad_request` naming what is allowed, because the TypeScript union only guards a TypeScript caller:
 
 ```js

@@ -19,8 +19,11 @@ const MIB = Buffer.alloc(1024 * 1024, 0x61);
 // records every request so a test can assert what did NOT happen.
 //
 // `storageRefusals` is how many storage requests are answered 503 before the file is served.
+//
+// `goneBuild` is a build the API answers 410 for, as it does once a build is pruned.
 function origin({
     blobBytes = SMALL.length, storageStatus = 200, dieAfterBytes = null, storageRefusals = 0,
+    goneBuild = null,
 } = {}) {
     const seen = [];
     const server = createServer((req, res) => {
@@ -30,6 +33,12 @@ function origin({
             query: Object.fromEntries(url.searchParams),
             headers: req.headers,
         });
+        if (url.pathname === '/api/v1/database/download' && goneBuild !== null
+            && url.searchParams.get('build') === goneBuild) {
+            res.writeHead(410, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ rc: 'BUILD_GONE' }));
+            return;
+        }
         if (url.pathname === '/api/v1/database/download') {
             res.writeHead(302, { location: `http://127.0.0.1:${server.address().port}/blob` });
             res.end();
@@ -98,6 +107,51 @@ test('downloadUrl returns the Location and does not follow it', async (t) => {
     const url = await o.client.database.downloadUrl('cdn_ip_v1', 'csvgz');
 
     assert.equal(url, `${o.baseUrl}/blob`);
+    assert.deepEqual(o.seen.map((r) => r.path), ['/api/v1/database/download']);
+});
+
+test('downloadUrl asks for the live build unless given one', async (t) => {
+    const o = await start();
+    t.after(() => o.server.close());
+
+    await o.client.database.downloadUrl('cdn_ip_v1', 'csvgz');
+    await o.client.database.downloadUrl('cdn_ip_v1', 'csvgz', { build: '20261105.0t53s5' });
+
+    assert.deepEqual(o.seen.map((r) => r.query), [
+        { id: 'cdn_ip_v1', format: 'csvgz' },
+        { id: 'cdn_ip_v1', format: 'csvgz', build: '20261105.0t53s5' },
+    ]);
+});
+
+for (const method of ['download', 'downloadBytes']) {
+    test(`${method} asks for the build it is given`, async (t) => {
+        const o = await start();
+        t.after(() => o.server.close());
+        const rest = method === 'download' ? [join(tmp, `build-${method}.csv.gz`)] : [];
+
+        await o.client.database[method]('cdn_ip_v1', 'csvgz', ...rest, { build: '20261105.0t53s5' });
+
+        assert.deepEqual(o.seen.map((r) => [r.path, r.query.build]), [
+            ['/api/v1/database/download', '20261105.0t53s5'],
+            ['/blob', undefined],
+        ]);
+    });
+}
+
+// A pruned build is gone for good, so asking again cannot help.
+test('a build no longer kept is a bad_request with its 410, sent once', async (t) => {
+    const o = await start({ goneBuild: '20261029.abc123' });
+    t.after(() => o.server.close());
+    const client = new VPNDetection({ baseUrl: o.baseUrl, apiKey: 'k', retries: 2 });
+
+    const err = await client.database.downloadBytes('cdn_ip_v1', 'csvgz', { build: '20261029.abc123' }).then(
+        () => null,
+        (e) => e,
+    );
+
+    assert.ok(err instanceof VPNDetectionError);
+    assert.equal(err.kind, 'bad_request');
+    assert.equal(err.status, 410);
     assert.deepEqual(o.seen.map((r) => r.path), ['/api/v1/database/download']);
 });
 

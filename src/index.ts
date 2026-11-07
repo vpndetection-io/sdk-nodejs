@@ -1,6 +1,7 @@
 export { VPNDetection, DatabaseApi, DEFAULT_BASE_URL } from './client.js';
 export type {
     Options, CacheOptions, LookupOptions, BatchOptions, DownloadsOptions,
+    DownloadOptions,
     DownloadDestination,
 } from './client.js';
 export { OauthApi } from './oauth.js';
