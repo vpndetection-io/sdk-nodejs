@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.10.4 - 2026-11-07
+
+### Fixes
+
+- Refuse a client concurrency that is not a whole number from 1 ([`a23907e`](https://github.com/vpndetection-io/sdk-nodejs/commit/a23907ee346f5c0f4b2586947253c2855366a74a))
+
 ## 5.10.3 - 2026-11-04
 
 ### Fixes
