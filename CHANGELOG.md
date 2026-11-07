@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.11.0 - 2026-11-07
+
+### Features
+
+- Download the build a database.updated webhook names ([`6c05447`](https://github.com/vpndetection-io/sdk-nodejs/commit/6c0544770785b665ab9d41954bde367ec308b0cf))
+
 ## 5.10.4 - 2026-11-07
 
 ### Fixes
