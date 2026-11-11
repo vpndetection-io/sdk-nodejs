@@ -17,7 +17,7 @@ Requires Node.js 22 or newer. TypeScript types are included.
 
 ## Usage
 
-**No API key needed to start.** Without a key, a lookup answers `ip` and `is_vpn`, up to 1000 a day per source address.
+**No API key needed to start.** Without a key a lookup answers `ip`, `is_vpn`, Tor and relay detection, `location` and `asn`, with no daily or monthly cap: up to 60 lookups a minute from each address.
 
 ```js
 import { VPNDetection } from 'vpndetection';
@@ -25,22 +25,22 @@ import { VPNDetection } from 'vpndetection';
 const client = new VPNDetection();
 
 const result = await client.lookup('45.83.91.1');
-console.log(result.isVpn);   // true
+console.log(result.isVpn);              // true
+console.log(result.location?.country);  // the ISO 3166 country code
+console.log(result.asn?.name);          // who runs the announcing network
 ```
 
 ### With an API key
 
-A free key adds Tor and relay detection, where the address is and the AS that announces it. Every paid plan answers every field, the same on each, and the plans differ only in how many lookups they include. Create a key in the [console](https://app.vpndetection.io), then pass it in:
+A free key adds every other flag, `is_hosting`, `is_cdn` and the four proxy flags, at 50,000 lookups a month, and every paid plan answers every field, the provider, confidence and last-seen detail behind each flag included. The paid plans differ only in how many lookups they include. Batch lookups need a key. Create one in the [console](https://app.vpndetection.io), then pass it in:
 
 ```js
 const client = new VPNDetection({ apiKey: process.env.VPNDETECTION_API_KEY });
 
 const result = await client.lookup('45.83.91.1');
 console.log(result.isVpn);              // true
-console.log(result.location?.country);  // the ISO 3166 country code
-console.log(result.asn?.name);          // who runs the announcing network
+console.log(result.isHosting);          // with any key, a free one included
 console.log(result.vpn?.provider);      // on a paid plan
-console.log(result.isHosting);          // on a paid plan
 ```
 
 ### Your own address
@@ -63,7 +63,7 @@ Usage counts against the anniversary of your subscription, not the calendar mont
 
 ### Batch lookup
 
-Look up as many addresses as you like in one call. Bogons and cached answers are handled locally, and the rest go to the batch endpoint in chunks of up to 1000, in parallel:
+Look up as many addresses as you like in one call. Bogons and cached answers are handled locally, and the rest go to the batch endpoint in chunks of up to 1000, in parallel. The batch endpoint needs an API key, a free one included:
 
 ```js
 const results = await client.lookupBatch(['45.83.91.1', '8.8.8.8', '1.1.1.1']);
@@ -149,7 +149,7 @@ try {
 
 `kind` is one of `bad_request`, `unauthorized`, `forbidden`, `rate_limited`, `quota_exceeded`, `server_error` or `network`.
 
-Note that `rate_limited` and `quota_exceeded` both arrive as HTTP 429 and are not the same thing. A rate limit is when the API faces extreme traffic bursts and so retrying later works; but a spent quota needs your allowance raised or the window to roll over. The library retries rate limits for you, but not if your quota is exceeded.
+Note that `rate_limited` and `quota_exceeded` both arrive as HTTP 429 and are not the same thing. A rate limit is when the API faces extreme traffic bursts, or a lookup without a key passes 60 a minute, and so retrying later works; but a spent quota needs your allowance raised or the window to roll over. The library retries rate limits for you, but not if your quota is exceeded.
 
 ### Timeouts
 
@@ -254,11 +254,12 @@ Each redirect URI must be https on a public host name, or http on a loopback add
 
 ### Absent is not false
 
-Without a key only `ip` and `isVpn` come back, and a free key adds Tor, relay, `location` and `asn`. A field your key does not include is `undefined`, which means "not in your plan" rather than "checked, and no".
+Without a key a lookup leaves out `isHosting`, `isCdn` and the four proxy flags, and a free key leaves out `vpn` and the detail behind each flag. A field your key does not include is `undefined`, which means "not in your plan" rather than "checked, and no".
 
 ```js
 result.isHosting ?? false        // when you only want the flag
-result.isHosting === undefined   // not in your plan
+result.isHosting === undefined   // without a key: not in your plan
+result.vpn === undefined         // on a free key: not in your plan
 ```
 
 ## Other Libraries
