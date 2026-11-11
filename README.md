@@ -17,7 +17,7 @@ Requires Node.js 22 or newer. TypeScript types are included.
 
 ## Usage
 
-**No API key needed to start.** The Unlimited tier answers `ip`, `is_vpn`, Tor and relay detection, `location` and `asn`, with no daily or monthly cap, for [non-commercial use](https://vpndetection.io/terms#no-key). Commercial use, or a batch lookup, needs a key, a free one included.
+**No API key needed to start.** The Unlimited tier answers `ip`, `is_vpn`, Tor and relay detection, `location` and `asn`, with no daily or monthly cap, with a key or without one.
 
 ```js
 import { VPNDetection } from 'vpndetection';
@@ -32,14 +32,14 @@ console.log(result.asn?.name);          // who runs the announcing network
 
 ### With an API key
 
-A free key adds every other flag, `is_hosting`, `is_cdn` and the four proxy flags, at 50,000 lookups a month, and every paid plan answers every field, the provider, confidence and last-seen detail behind each flag included. The paid plans differ only in how many lookups they include. Create a key in the [console](https://app.vpndetection.io), then pass it in:
+Every paid plan answers every field: `is_hosting`, `is_cdn` and the four proxy flags as well, and the provider, confidence and last-seen detail behind each flag. The plans differ only in how many lookups they include, and a new account can try every field, 100 lookups a day. Create a key in the [console](https://app.vpndetection.io), then pass it in:
 
 ```js
 const client = new VPNDetection({ apiKey: process.env.VPNDETECTION_API_KEY });
 
 const result = await client.lookup('45.83.91.1');
 console.log(result.isVpn);              // true
-console.log(result.isHosting);          // with any key, a free one included
+console.log(result.isHosting);          // on a paid plan
 console.log(result.vpn?.provider);      // on a paid plan
 ```
 
@@ -59,11 +59,11 @@ console.log(ent.usage.requests);    // 580
 console.log(ent.usage.window_end);  // when the allowance resets
 ```
 
-Usage counts against the anniversary of your subscription, not the calendar month and not the billing period, and it is the same number a lookup is gated on. `hard_limit` is null on an uncapped plan, which is not the same as zero.
+Usage counts against the anniversary of your subscription on a paid plan, not the calendar month and not the billing period, and against the UTC day on a trial key; it is the same number a lookup is gated on. `hard_limit` is null on an uncapped plan, which is not the same as zero.
 
 ### Batch lookup
 
-Look up as many addresses as you like in one call. Bogons and cached answers are handled locally, and the rest go to the batch endpoint in chunks of up to 1000, in parallel. The batch endpoint needs an API key, a free one included:
+Look up as many addresses as you like in one call. Bogons and cached answers are handled locally, and the rest go to the batch endpoint in chunks of up to 1000, in parallel. The batch endpoint needs a paid plan:
 
 ```js
 const results = await client.lookupBatch(['45.83.91.1', '8.8.8.8', '1.1.1.1']);
@@ -254,12 +254,12 @@ Each redirect URI must be https on a public host name, or http on a loopback add
 
 ### Absent is not false
 
-Without a key a lookup leaves out `isHosting`, `isCdn` and the four proxy flags, and a free key leaves out `vpn` and the detail behind each flag. A field your key does not include is `undefined`, which means "not in your plan" rather than "checked, and no".
+The Unlimited tier leaves out `isHosting`, `isCdn` and the four proxy flags, and of the detail behind each flag it answers only Tor's and relay's; a trial key's answer carries `trialExpired`, true once its day of full answers is spent. A field your key does not include is `undefined`, which means "not in your plan" rather than "checked, and no".
 
 ```js
 result.isHosting ?? false        // when you only want the flag
-result.isHosting === undefined   // without a key: not in your plan
-result.vpn === undefined         // on a free key: not in your plan
+result.isHosting === undefined   // on the Unlimited tier: not in your plan
+result.trialExpired === true     // a trial key's day of full answers is spent
 ```
 
 ## Other Libraries
