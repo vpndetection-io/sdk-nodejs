@@ -74,7 +74,7 @@ export interface DownloadOptions {
 
 export interface Options {
     /**
-     * Your API key. Without one a lookup is on the Unlimited tier: `ip`,
+     * Your API key. Without one a lookup is on Unlimited, the free plan: `ip`,
      * `is_vpn`, the Tor and relay members, `location` and `asn`, with no daily
      * or monthly cap. A batch needs a key on a paid plan.
      */
