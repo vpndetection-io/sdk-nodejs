@@ -251,7 +251,7 @@ export class VPNDetection {
      *
      * Usage counts against the ALLOWANCE WINDOW - on a paid plan the
      * anniversary of the subscription, not the calendar month and not the
-     * billing period, and on a trial key the UTC day - and it is the same
+     * billing period, and on the free plan the UTC day - and it is the same
      * number a lookup is gated on. It can lag by a few seconds, because
      * requests are counted in memory and flushed in aggregate.
      *
@@ -285,7 +285,7 @@ export class VPNDetection {
      * is refused as `bad_request` before anything is sent. An IPv4-mapped address is looked
      * up as the IPv4 address it carries, and its answer keyed as you passed it.
      * The batch endpoint needs a paid plan: without a key every address sent to
-     * it carries an `unauthorized` error, and a trial key's batch of two or more
+     * it carries an `unauthorized` error, and a free-plan key's batch of two or more
      * a `bad_request` (HTTP 402).
      */
     async lookupBatch(
