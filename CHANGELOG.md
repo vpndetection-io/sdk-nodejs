@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.12.0 - 2026-11-11
+
+### Features
+
+- Re-pin the spec to 2026.11.11: a lookup without a key answers more ([`947d970`](https://github.com/vpndetection-io/sdk-nodejs/commit/947d970e8e7069b66360ac06562ac85d6faa05c1))
+
 ## 5.11.0 - 2026-11-07
 
 ### Features
