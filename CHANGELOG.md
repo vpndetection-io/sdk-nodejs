@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.13.2 - 2026-11-11
+
+### Fixes
+
+- Say Unlimited, the free plan, never the Unlimited tier, and re-pin the spec ([`bd19c0b`](https://github.com/vpndetection-io/sdk-nodejs/commit/bd19c0b8b3e088610fbe9b48ce07c429a1010ede))
+
 ## 5.13.1 - 2026-11-11
 
 ### Fixes
