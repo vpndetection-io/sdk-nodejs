@@ -2,6 +2,17 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.14.0 - 2026-11-14
+
+### Features
+
+- Re-pin the spec to 2026.11.14: is_bogon on every answer, and provider_name beside each provider ([`c91414f`](https://github.com/vpndetection-io/sdk-nodejs/commit/c91414feb9caf7a8d92eb49a20557c0625a85958))
+
+### Fixes
+
+- Re-pin the spec to 2026.11.12: plainer words on the 401 and the batch rate limit ([`d4bf17e`](https://github.com/vpndetection-io/sdk-nodejs/commit/d4bf17ee4f4c6fc3bbddce2c004b456dae46f50a))
+- Say that a batch request of one address is answered as its lookup ([`43a7eef`](https://github.com/vpndetection-io/sdk-nodejs/commit/43a7eef4fdd6eeeaa2ac7cdfb507fc1ba8607c00))
+
 ## 5.13.2 - 2026-11-11
 
 ### Fixes
