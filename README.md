@@ -54,12 +54,15 @@ console.log(result.ip);   // the address we saw this call come from
 
 ```js
 const ent = await client.myEntitlement();
-console.log(ent.plan.key);          // max
+console.log(ent.plan.name);         // Max, what to show
+console.log(ent.plan.key);          // max, what to compare against
 console.log(ent.usage.requests);    // 580
 console.log(ent.usage.window_end);  // when the allowance resets
 ```
 
 Usage counts against the anniversary of your subscription on a paid plan, not the calendar month and not the billing period, and against the UTC day on the free plan; it is the same number a lookup is gated on. `hard_limit` is null on an uncapped plan, which is not the same as zero.
+
+Show `plan.name` and compare against `plan.key`: a plan's name can change, and its key never does. A value the API adds later to a plan's `tier`, a database's `standing` or `license_type`, a format or a download's `outcome` comes back as the string it served, so check for the values you know rather than assuming the list is complete.
 
 ### Batch lookup
 

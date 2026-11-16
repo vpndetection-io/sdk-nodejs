@@ -352,3 +352,34 @@ test('an unpublished format is rejected without touching the network', async () 
         );
     }
 });
+
+// list and downloads unwrap their envelope, so the answer is wrapped back under
+// its wire name for the corpus's paths, which are wire names throughout: the
+// entitlement and database answers are the wire objects.
+const VOCABULARY_CALLS = {
+    myEntitlement: ['/api/v1/entitlement', (c) => c.myEntitlement()],
+    listDatabases: ['/api/v1/database/list', async (c) => ({ databases: await c.database.list() })],
+    listDownloads: ['/api/v1/database/downloads', async (c) => ({ downloads: await c.database.downloads() })],
+};
+
+test('a closed vocabulary hands back a value it was not built with', async () => {
+    const cases = data.vocabulary.cases;
+    assert.ok(cases.length >= 6);
+    for (const c of cases) {
+        const [path, call] = VOCABULARY_CALLS[c.call];
+        const client = new VPNDetection({
+            apiKey: 'k',
+            retries: 0,
+            fetch: async (input) => {
+                const url = typeof input === 'string' ? input : input.url;
+                assert.equal(new URL(url).pathname, path, c.name);
+                return new Response(JSON.stringify(c.answer), { headers: { 'content-type': 'application/json' } });
+            },
+        });
+        const answer = await call(client);
+        for (const [member, value] of Object.entries(c.expect)) {
+            const got = member.split('.').reduce((v, step) => v[step], answer);
+            assert.deepEqual(got, value, `${c.name}: ${member}`);
+        }
+    }
+});
