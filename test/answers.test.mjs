@@ -24,6 +24,22 @@ function rawClient(reply, options = {}) {
     return { calls: calls, client: new VPNDetection({ apiKey: 'test-key', fetch: fetch, retries: 2, cache: false, ...options }) };
 }
 
+// Fires each timer as soon as everything else has settled, so a test that counts retries does not
+// sit out p-retry's backoff on the real clock (seconds per call). The calls' fetch answers at once,
+// so no request is in flight when the timers run.
+async function fastBackoff(t, fn) {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let done = false;
+    const run = fn().finally(() => {
+        done = true;
+    });
+    while (!done) {
+        await new Promise((resolve) => setImmediate(resolve));
+        t.mock.timers.runAll();
+    }
+    return run;
+}
+
 function body(text, type = 'application/json') {
     return () => new Response(text, { status: 200, headers: { 'content-type': type } });
 }
@@ -49,7 +65,7 @@ const CALLS = {
     downloads: [(c) => c.database.downloads(), '{"downloads":"x"}', '{"downloads":[{}]}'],
 };
 
-test('a 2xx a call cannot read is a retried server_error carrying its status', async () => {
+test('a 2xx a call cannot read is a retried server_error carrying its status', async (t) => fastBackoff(t, async () => {
     for (const [name, [call, wrongType, noMembers]] of Object.entries(CALLS)) {
         const replies = {
             html: body('<html><body>Bad gateway</body></html>', 'text/html'),
@@ -72,9 +88,9 @@ test('a 2xx a call cannot read is a retried server_error carrying its status', a
             assert.equal(c.calls.length, 3, `${name} ${kind} is retried`);
         }));
     }
-});
+}));
 
-test('a batch chunk it cannot read is retried, and fails every address with the status', async () => {
+test('a batch chunk it cannot read is retried, and fails every address with the status', async (t) => fastBackoff(t, async () => {
     const replies = {
         html: body('<html><body>Bad gateway</body></html>', 'text/html'),
         cut: cutOff(),
@@ -94,7 +110,7 @@ test('a batch chunk it cannot read is retried, and fails every address with the 
         }
         assert.equal(c.calls.length, 3, `${kind} is retried`);
     }));
-});
+}));
 
 test('one batch entry it cannot read is that address error alone', async () => {
     for (const entry of [{}, [], 'x', { ip: OTHER }]) {
@@ -162,7 +178,7 @@ test('a served is_bogon reaches the result', async () => {
 
 // Through 5.10.0 only presence was checked, so each of these came back as served
 // (measured 2026-10-23), where a number, a boolean or an object is promised.
-test('a member of the wrong type is a retried server_error carrying its status', async () => {
+test('a member of the wrong type is a retried server_error carrying its status', async (t) => fastBackoff(t, async () => {
     const lookup = { ip: IP, is_vpn: true };
     const location = {
         continent: 'EU', continent_name: 'Europe', country: 'DE', country_name: 'Germany', timezone: 'Europe/Berlin',
@@ -242,11 +258,11 @@ test('a member of the wrong type is a retried server_error carrying its status',
     const out = await c.client.lookupBatch([IP]);
     assert.equal(out.get(IP).kind, 'server_error');
     assert.equal(c.calls.length, 1);
-});
+}));
 
 // `checksums` hands back the digests alone, so through 5.10.0 nothing read `id` or
 // `format`, and an answer without either, or with one null or of another type, came back.
-test('a checksum answer without its id or format is a retried server_error', async () => {
+test('a checksum answer without its id or format is a retried server_error', async (t) => fastBackoff(t, async () => {
     const answer = { id: 'vpn_ip_v1', format: 'csvgz', checksums: { md5: 'a', sha1: 'b', sha256: 'c', sha512: 'd' } };
     const cases = {
         'no id': { ...answer, id: undefined },
@@ -267,11 +283,11 @@ test('a checksum answer without its id or format is a retried server_error', asy
     }
     const c = rawClient(body(JSON.stringify(answer)));
     assert.deepEqual(await c.client.database.checksums('vpn_ip_v1', 'csvgz'), answer.checksums);
-});
+}));
 
 // RFC 3339 alone, on a day that exists. Through 5.10.1 a date was checked as a
 // string alone, so every one of these came back as served (measured 2026-10-26).
-test('a date or date-time that is not RFC 3339 is a retried server_error', async () => {
+test('a date or date-time that is not RFC 3339 is a retried server_error', async (t) => fastBackoff(t, async () => {
     const dateTimes = ['2026-10-05', '2026-10-05T10:00:00', '2026-10-05T10:00:00+05', '2026-10-05T10:00Z',
         '2026-10-05T10:00:00+0500', '2026-10-05T10:00:00+05:00:30', '2026-10-05T24:00:00Z', '2026-10-05T10:60:00Z',
         '2026-10-05T10:00:60Z', '2026-02-30T10:00:00Z', '2026-10-05T10:00:00+24:00', '2026-10-05T10:00:00+05:60',
@@ -329,7 +345,7 @@ test('a date or date-time that is not RFC 3339 is a retried server_error', async
         const c = rawClient(body(JSON.stringify({ ...lookup, hosting: { last_seen: value } })));
         assert.equal((await c.client.lookup(IP)).hosting.last_seen, value, value);
     }
-});
+}));
 
 // Each `date` and `date-time` kind is the spec's `format` for that member, and no
 // other member carries one, so a date the spec adds is checked before it ships.
