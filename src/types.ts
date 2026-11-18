@@ -58,6 +58,12 @@ export interface Result {
      * Unlimited's.
      */
     trialExpired?: boolean;
+    /**
+     * On answers to a key on a paid plan only: `false` while the answer has every field, `true`
+     * once its organization's overage cap is reached and the answer has Unlimited's. Lookups
+     * answered past the cap are not billed.
+     */
+    capReached?: boolean;
 
     vpn?: VpnDetail;
     hosting?: ClassDetail;
@@ -101,6 +107,7 @@ export function toResult(body: LookupResponse): Result {
     copyFlag(body, r, 'is_mobproxy', 'isMobproxy');
     copyFlag(body, r, 'is_pubproxy', 'isPubproxy');
     copyFlag(body, r, 'trial_expired', 'trialExpired');
+    copyFlag(body, r, 'cap_reached', 'capReached');
     copyDetail(body, r, 'vpn', 'vpn');
     copyDetail(body, r, 'hosting', 'hosting');
     copyDetail(body, r, 'relay', 'relay');
@@ -118,7 +125,7 @@ export function toResult(body: LookupResponse): Result {
 function copyFlag(
     body: LookupResponse, out: Result,
     from: keyof LookupResponse, to: 'isHosting' | 'isRelay' | 'isTor' | 'isCdn'
-        | 'isResproxy' | 'isDcproxy' | 'isMobproxy' | 'isPubproxy' | 'trialExpired',
+        | 'isResproxy' | 'isDcproxy' | 'isMobproxy' | 'isPubproxy' | 'trialExpired' | 'capReached',
 ) {
     if (from in body && body[from] !== undefined) {
         out[to] = body[from] as boolean;
