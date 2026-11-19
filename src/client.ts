@@ -48,7 +48,10 @@ const BATCH_MAX = 1000;
 export interface CacheOptions {
     /** Maximum number of addresses held. Default 10000. */
     max?: number;
-    /** How long an answer stays fresh, in milliseconds. Default 1 hour. */
+    /**
+     * How long an answer stays fresh, in milliseconds. Default 1 hour. An answer
+     * marked `trialExpired` or `capReached` stays a minute at most.
+     */
     ttlMs?: number;
 }
 
@@ -152,13 +155,18 @@ export class VPNDetection {
             ...(apiKey === undefined ? {} : { auth: bearerOnly(apiKey) }),
             fetch: fetchImpl,
         }));
+        const ttlMs = options.cache === false ? 0 : (options.cache?.ttlMs ?? 60 * 60 * 1000);
         this.cache = options.cache === false ? null : new LRUCache<string, Result, () => Promise<Result>>({
             max: options.cache?.max ?? 10_000,
-            ttl: options.cache?.ttlMs ?? 60 * 60 * 1000,
+            ttl: ttlMs,
             // Concurrent misses for one address share one request: every
             // `fetch()` while it is in flight gets the same promise, and a
             // failure rejects them all and is cached for none.
-            fetchMethod: (_ip, _stale, { context }) => context(),
+            fetchMethod: async (_ip, _stale, { context, options }) => {
+                const result = await context();
+                options.ttl = lifeMs(result, ttlMs);
+                return result;
+            },
             // An eviction must not fail the callers awaiting a request.
             ignoreFetchAbort: true,
         });
@@ -669,3 +677,15 @@ function assertFormat(format: DatabaseFormat): void {
         `invalid format ${JSON.stringify(format)}; must be one of ${DATABASE_FORMATS.join(', ')}`,
     );
 }
+
+// A reduced answer, a spent trial's or a reached cap's, ends with a new UTC day or
+// a raised cap, so it stays a minute at most rather than the TTL. It is still
+// cached, or a busy process would send every repeat of an address to the API.
+function lifeMs(result: Result, ttlMs: number): number {
+    if (result.trialExpired === true || result.capReached === true) {
+        return Math.min(ttlMs, REDUCED_TTL_MS);
+    }
+    return ttlMs;
+}
+
+const REDUCED_TTL_MS = 60_000;

@@ -109,6 +109,8 @@ const client = new VPNDetection({ cache: { max: 50_000, ttlMs: 6 * 60 * 60 * 100
 const clientNoCache = new VPNDetection({ cache: false });
 ```
 
+An answer with `trialExpired` or `capReached` true is cached for a minute at most, so a new day's trial or a raised cap reaches you within a minute.
+
 ### Private and reserved addresses
 
 Private, loopback, link-local, documentation and multicast addresses (and their IPv6 equivalents, including the 6to4 and Teredo ranges) can never be VPN or proxy infrastructure. The library answers them locally, so they cost no request and no quota:
