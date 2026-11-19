@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.16.2 - 2026-11-19
+
+### Fixes
+
+- Cache a spent trial's or a reached cap's answer for a minute at most ([`71f2b85`](https://github.com/vpndetection-io/sdk-nodejs/commit/71f2b85a6029a96c512ac2d5ec9631569c603889))
+
 ## 5.16.1 - 2026-11-19
 
 ### Fixes
