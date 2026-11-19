@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.16.1 - 2026-11-19
+
+### Fixes
+
+- Re-pin the spec to 2026.11.18: a key over plain HTTP is refused ([`393087e`](https://github.com/vpndetection-io/sdk-nodejs/commit/393087e9a0f859bf980de352aebf33d2385b5e27))
+
 ## 5.16.0 - 2026-11-18
 
 ### Features
