@@ -220,7 +220,7 @@ if (token.apikey === undefined) {
 const keyed = new VPNDetection({ apiKey: token.apikey });
 ```
 
-A denied sign-in rejects with `OauthAccessDeniedError` and a code that ran out with `OauthExpiredTokenError`. Client IDs are issued on request from support@vpndetection.io, and `client.oauth.revoke('your-client-id', token.refresh_token)` signs the machine out again.
+A denied sign-in rejects with `OauthAccessDeniedError` and a code that ran out with `OauthExpiredTokenError`. `client.oauth.revoke('your-client-id', token.refresh_token)` signs the machine out again. Only a client we registered, such as our CLI, can use the device flow: an app of your own signs people in with the authorization code flow below.
 
 ### Sign in with OAuth (authorization code)
 

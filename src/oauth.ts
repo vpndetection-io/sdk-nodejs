@@ -131,7 +131,10 @@ export interface TokenResponse {
  * it, or through a browser redirect with the authorization code flow. Reached
  * through `client.oauth`.
  *
- * Every call takes a client ID, issued on request from support@vpndetection.io.
+ * Every call takes a client ID. The device flow takes only a client we registered,
+ * such as our CLI; an app of its own signs people in with the authorization code
+ * flow, its client ID the https URL of a client metadata document it serves, or
+ * the one `register` gave it.
  * None of these requests carries the client's API key, and none needs one.
  */
 export class OauthApi {
