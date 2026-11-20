@@ -15,7 +15,8 @@ export {
 } from './errors.js';
 export type { ErrorKind } from './errors.js';
 export type {
-    Result, VpnDetail, ClassDetail, ProxyDetail, PubproxyDetail, Location, Asn, LookupResponse,
+    Result, VpnDetail, ClassDetail, ProxyDetail, PubproxyDetail, CarrierDetail, SatelliteDetail, SshDetail,
+    SmtpDetail, WebDetail, DnsResolverDetail, BitTorrentDetail, Location, Asn, Company, AbuseContact, LookupResponse,
 } from './types.js';
 export { DATABASE_FORMATS, STANDINGS, LICENSE_TYPES } from './types.js';
 export type {

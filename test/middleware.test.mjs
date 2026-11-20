@@ -18,7 +18,9 @@ const data = JSON.parse(readFileSync(new URL('../testdata/testdata.json', import
 const MEMBER = {
     is_vpn: 'isVpn', is_hosting: 'isHosting', is_relay: 'isRelay', is_tor: 'isTor',
     is_cdn: 'isCdn', is_resproxy: 'isResproxy', is_dcproxy: 'isDcproxy', is_mobproxy: 'isMobproxy',
-    is_pubproxy: 'isPubproxy',
+    is_pubproxy: 'isPubproxy', is_anycast: 'isAnycast', is_carrier: 'isCarrier', is_satellite: 'isSatellite',
+    is_ssh: 'isSsh', is_smtp: 'isSmtp', is_web: 'isWeb', is_dns_resolver: 'isDnsResolver',
+    is_bittorrent: 'isBittorrent', dns_resolver: 'dnsResolver',
 };
 
 function toIdiom(condition) {
