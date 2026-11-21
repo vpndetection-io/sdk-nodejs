@@ -33,6 +33,10 @@ export const MEMBERS = {
     resproxy: { required: PROXY_KEYS, optional: [] },
     dcproxy: { required: PROXY_KEYS, optional: [] },
     mobproxy: { required: PROXY_KEYS, optional: [] },
+    pubproxy: {
+        required: ['entry', 'exit', 'protocols', 'num_ports', 'num_proxies', 'last_seen', 'last_usable'],
+        optional: [],
+    },
 };
 
 // The network and service members, read by the client from 5.17.0: an older
