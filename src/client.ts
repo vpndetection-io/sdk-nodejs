@@ -46,11 +46,11 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const BATCH_MAX = 1000;
 
 export interface CacheOptions {
-    /** Maximum number of addresses held. Default 10000. */
+    /** Maximum number of addresses held, a whole number from 1. Default 10000. */
     max?: number;
     /**
-     * How long an answer stays fresh, in milliseconds. Default 1 hour. An answer
-     * marked `trialExpired` or `capReached` stays a minute at most.
+     * How long an answer stays fresh, in whole milliseconds from 1. Default 1 hour.
+     * An answer marked `trialExpired` or `capReached` stays a minute at most.
      */
     ttlMs?: number;
 }
@@ -155,9 +155,9 @@ export class VPNDetection {
             ...(apiKey === undefined ? {} : { auth: bearerOnly(apiKey) }),
             fetch: fetchImpl,
         }));
-        const ttlMs = options.cache === false ? 0 : (options.cache?.ttlMs ?? 60 * 60 * 1000);
+        const ttlMs = options.cache === false ? 0 : (checkCacheOption('ttlMs', options.cache?.ttlMs) ?? 60 * 60 * 1000);
         this.cache = options.cache === false ? null : new LRUCache<string, Result, () => Promise<Result>>({
-            max: options.cache?.max ?? 10_000,
+            max: checkCacheOption('max', options.cache?.max) ?? 10_000,
             ttl: ttlMs,
             // Concurrent misses for one address share one request: every
             // `fetch()` while it is in flight gets the same promise, and a
@@ -676,6 +676,22 @@ function assertFormat(format: DatabaseFormat): void {
         'bad_request',
         `invalid format ${JSON.stringify(format)}; must be one of ${DATABASE_FORMATS.join(', ')}`,
     );
+}
+
+/**
+ * A cache size or TTL refused where it is set, `null` reading as unset. lru-cache
+ * reads a zero or NaN TTL as none, which would keep every answer for good, a spent
+ * trial's included, and a zero size as no bound; anything else not whole it throws
+ * a bare TypeError for.
+ */
+function checkCacheOption(name: 'max' | 'ttlMs', value: number | null | undefined): number | undefined {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+    if (!(typeof value === 'number' && Number.isSafeInteger(value) && value >= 1)) {
+        throw new VPNDetectionError('bad_request', `cache.${name} must be a whole number from 1, got ${String(value)}`);
+    }
+    return value;
 }
 
 // A reduced answer, a spent trial's or a reached cap's, ends with a renewed trial or
