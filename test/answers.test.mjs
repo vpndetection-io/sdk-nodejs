@@ -278,6 +278,43 @@ test('a member of the wrong type is a retried server_error carrying its status',
     assert.equal(c.calls.length, 1);
 }));
 
+// Every answer carries the AS's country and RPKI status, as the API documents, so
+// an AS without either, or with either null, is no answer: through 5.17.1 it came
+// back as served.
+test('an AS without its country or RPKI status is a retried server_error', async (t) => fastBackoff(t, async () => {
+    const asn = {
+        asn: 15169, name: 'Google LLC', domain: 'google.com', type: 'hosting', prefix: '66.249.64.0/20', country: 'US',
+        rpki_status: 'valid',
+    };
+    const { country: _country, ...noCountry } = asn;
+    const { rpki_status: _rpki, ...noRpki } = asn;
+    const cases = {
+        'no country': noCountry, 'no rpki_status': noRpki,
+        'a null country': { ...asn, country: null }, 'a null rpki_status': { ...asn, rpki_status: null },
+    };
+    for (const [call, name] of [[(c) => c.lookup(IP), 'lookup'], [(c) => c.myIp(), 'myIp']]) {
+        const whole = rawClient(body(JSON.stringify({ ip: IP, is_vpn: false, asn: asn })));
+        assert.deepEqual((await call(whole.client)).asn, asn, `${name} reads a whole AS`);
+        for (const [kind, served] of Object.entries(cases)) {
+            const c = rawClient(body(JSON.stringify({ ip: IP, is_vpn: false, asn: served })));
+            await assert.rejects(() => call(c.client), (err) => {
+                assert.equal(err.kind, 'server_error', `${name} ${kind}: ${err.message}`);
+                assert.equal(err.status, 200, `${name} ${kind}`);
+                return true;
+            });
+            assert.equal(c.calls.length, 3, `${name} ${kind} is retried`);
+        }
+    }
+    for (const [kind, served] of Object.entries(cases)) {
+        const answer = { results: { [IP]: { ip: IP, is_vpn: false, asn: asn }, [OTHER]: { ip: OTHER, is_vpn: false, asn: served } }, errors: {} };
+        const c = rawClient(body(JSON.stringify(answer)));
+        const out = await c.client.lookupBatch([IP, OTHER]);
+        assert.deepEqual(out.get(IP).asn, asn, kind);
+        assert.equal(out.get(OTHER).kind, 'server_error', `batch ${kind}`);
+        assert.equal(out.get(OTHER).status, 200, `batch ${kind}`);
+    }
+}));
+
 // `checksums` hands back the digests alone, so through 5.10.0 nothing read `id` or
 // `format`, and an answer without either, or with one null or of another type, came back.
 test('a checksum answer without its id or format is a retried server_error', async (t) => fastBackoff(t, async () => {
