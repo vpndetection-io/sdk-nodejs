@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.17.1 - 2026-11-22
+
+### Fixes
+
+- Refuse a cache TTL or size that is not a whole number from 1 ([`9130285`](https://github.com/vpndetection-io/sdk-nodejs/commit/91302856a532279a5ab8d8cdc153b292593f8077))
+
 ## 5.17.0 - 2026-11-20
 
 ### Features
