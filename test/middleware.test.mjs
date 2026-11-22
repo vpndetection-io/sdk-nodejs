@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { VPNDetection, VPNDetectionError } from '../dist/index.js';
+import { VPNDetection, VPNDetectionError, isBogon } from '../dist/index.js';
 import {
     bindSelectors, createCore, matchesCondition, missingMembers,
 } from '../dist/middleware/index.js';
@@ -20,7 +20,7 @@ const MEMBER = {
     is_cdn: 'isCdn', is_resproxy: 'isResproxy', is_dcproxy: 'isDcproxy', is_mobproxy: 'isMobproxy',
     is_pubproxy: 'isPubproxy', is_anycast: 'isAnycast', is_carrier: 'isCarrier', is_satellite: 'isSatellite',
     is_ssh: 'isSsh', is_smtp: 'isSmtp', is_web: 'isWeb', is_dns_resolver: 'isDnsResolver',
-    is_bittorrent: 'isBittorrent', dns_resolver: 'dnsResolver',
+    is_bittorrent: 'isBittorrent', is_bot: 'isBot', dns_resolver: 'dnsResolver',
 };
 
 function toIdiom(condition) {
@@ -61,6 +61,28 @@ for (const c of data.middleware.conditions) {
         );
     });
 }
+
+// Every answer carries `is_bot`, so a condition on it blocks a bot's public address
+// and lets any other through, on any plan. A bogon answers it false.
+test('an isBot condition blocks a served bot and passes anything else', async () => {
+    const bodies = Object.fromEntries(data.lookup.map((c) => [c.name, c.body]));
+    const answers = [
+        [bodies['paid-verified-bot'], true], [bodies['unlimited-bot'], true],
+        [bodies['unlimited-anycast-hostname'], false], [bodies['paid-satellite'], false],
+    ];
+    for (const [served, blocked] of answers) {
+        assert.ok(served !== undefined && !isBogon(served.ip), 'a public address from the corpus');
+        const core = createCore({ client: clientServing(served), blockCondition: { isBot: true } }, defaultIpSelector);
+        const out = await core.evaluate(req({}, served.ip));
+        assert.equal(out.error, undefined, served.ip);
+        assert.equal(out.ip, served.ip);
+        assert.equal(out.result.isBot, served.is_bot, served.ip);
+        assert.equal(out.blocked, blocked, served.ip);
+    }
+    const bogon = await new VPNDetection().lookup('10.0.0.1');
+    assert.equal(matchesCondition({ isBot: true }, bogon), false);
+    assert.deepEqual(missingMembers({ isBot: true }, bogon), []);
+});
 
 for (const c of data.middleware.invalidConditions) {
     test(`invalid condition refused: ${c.name}`, () => {
