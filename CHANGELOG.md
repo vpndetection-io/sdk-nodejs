@@ -2,6 +2,16 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.18.0 - 2026-11-22
+
+### Features
+
+- Read whether a bot uses an address, and whose: isBot and bot ([`70e9c63`](https://github.com/vpndetection-io/sdk-nodejs/commit/70e9c63f50a60e44f03691e021733850fcce6096))
+
+### Fixes
+
+- Refuse an answer whose AS lacks its country or RPKI status ([`dbcc640`](https://github.com/vpndetection-io/sdk-nodejs/commit/dbcc6407504fed2e1e9d4aa398ca9ac379026ab4))
+
 ## 5.17.1 - 2026-11-22
 
 ### Fixes
