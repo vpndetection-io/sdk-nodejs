@@ -74,6 +74,9 @@ export interface DownloadOptions {
      * a `bad_request` with status 410.
      */
     build?: string;
+    // No `timeoutMs`: a transfer runs for minutes and is exempt from any timeout,
+    // and the link request runs on the client's. One passed is refused as a
+    // `bad_request`, never dropped.
 }
 
 export interface Options {
@@ -523,6 +526,7 @@ export class DatabaseApi {
     async downloadUrl(
         id: string, format: DatabaseFormat, options: DownloadOptions = {},
     ): Promise<string> {
+        refuseTimeout('downloadUrl', options);
         assertFormat(format);
         const build = options.build ?? undefined;
         return withRetry(this.retries, async () => {
@@ -566,6 +570,7 @@ export class DatabaseApi {
         id: string, format: DatabaseFormat, destination: DownloadDestination,
         options: DownloadOptions = {},
     ): Promise<number> {
+        refuseTimeout('download', options);
         const res = await this.fetchDatabaseFile(id, format, options);
         if (res.body === null) {
             throw new VPNDetectionError(
@@ -617,6 +622,7 @@ export class DatabaseApi {
     async downloadBytes(
         id: string, format: DatabaseFormat, options: DownloadOptions = {},
     ): Promise<Uint8Array> {
+        refuseTimeout('downloadBytes', options);
         const res = await this.fetchDatabaseFile(id, format, options);
         return new Uint8Array(await res.arrayBuffer());
     }
@@ -700,6 +706,21 @@ function assertFormat(format: DatabaseFormat): void {
     throw new VPNDetectionError(
         'bad_request',
         `invalid format ${JSON.stringify(format)}; must be one of ${DATABASE_FORMATS.join(', ')}`,
+    );
+}
+
+/**
+ * A per-call `timeoutMs` on a dataset call that takes none, refused before
+ * anything is sent. TypeScript stops it on a literal and nobody else: through
+ * 5.19.1 a JavaScript caller's was dropped and the call waited the client's
+ * full timeout, where the caller had asked for less.
+ */
+function refuseTimeout(method: string, options: DownloadOptions): void {
+    if ((options as { timeoutMs?: unknown }).timeoutMs === undefined) {
+        return;
+    }
+    throw new VPNDetectionError(
+        'bad_request', `${method} takes no per-call timeoutMs: the link request runs on the client's, and a transfer on none`,
     );
 }
 

@@ -185,6 +185,26 @@ for (const method of ['download', 'downloadBytes']) {
     });
 }
 
+// Through 5.19.1 a JavaScript caller's per-call `timeoutMs` on these was dropped
+// without a word, so the call waited the client's full timeout instead.
+for (const method of ['download', 'downloadBytes', 'downloadUrl']) {
+    test(`${method} refuses a per-call timeoutMs as bad_request before any request`, async (t) => {
+        const o = await start();
+        t.after(() => o.server.close());
+        const rest = method === 'download' ? [join(tmp, `timeout-${method}.csv.gz`)] : [];
+
+        const err = await o.client.database[method]('cdn_ip_v1', 'csvgz', ...rest, { timeoutMs: 200 }).then(
+            () => null,
+            (e) => e,
+        );
+
+        assert.ok(err instanceof VPNDetectionError, `expected a VPNDetectionError, got ${String(err)}`);
+        assert.equal(err.kind, 'bad_request');
+        assert.match(err.message, /timeoutMs/);
+        assert.deepEqual(o.seen, []);
+    });
+}
+
 // A pruned build is gone for good, so asking again cannot help.
 test('a build no longer kept is a bad_request with its 410, sent once', async (t) => {
     const o = await start({ goneBuild: '20261029.abc123' });
