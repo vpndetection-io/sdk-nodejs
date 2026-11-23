@@ -1,4 +1,5 @@
 import { BOGON_V4, BOGON_V6 } from './bogons.gen.js';
+import { toResult } from './types.js';
 import type { LookupResponse, Result } from './types.js';
 
 /**
@@ -48,27 +49,34 @@ export function unmapped(ip: string): string {
  * plan, so do not infer which fields your plan includes from a bogon answer.
  */
 export function bogonResult(ip: string): Result {
+    return toResult(bogonAnswer(ip));
+}
+
+// In the wire's names, so `raw` is the answer as the API would serve it and a
+// consumer forwarding `raw` (a proxy's header, a log) carries the bogon answer
+// rather than an empty object.
+function bogonAnswer(ip: string): LookupResponse {
     return {
         ip: ip,
-        isBogon: true,
-        isVpn: false,
-        isHosting: false,
-        isRelay: false,
-        isTor: false,
-        isCdn: false,
-        isResproxy: false,
-        isDcproxy: false,
-        isMobproxy: false,
-        isPubproxy: false,
-        isAnycast: false,
-        isCarrier: false,
-        isSatellite: false,
-        isSsh: false,
-        isSmtp: false,
-        isWeb: false,
-        isDnsResolver: false,
-        isBittorrent: false,
-        isBot: false,
+        is_bogon: true,
+        is_vpn: false,
+        is_hosting: false,
+        is_relay: false,
+        is_tor: false,
+        is_cdn: false,
+        is_resproxy: false,
+        is_dcproxy: false,
+        is_mobproxy: false,
+        is_pubproxy: false,
+        is_anycast: false,
+        is_carrier: false,
+        is_satellite: false,
+        is_ssh: false,
+        is_smtp: false,
+        is_web: false,
+        is_dns_resolver: false,
+        is_bittorrent: false,
+        is_bot: false,
         vpn: {},
         hosting: {},
         relay: {},
@@ -83,7 +91,7 @@ export function bogonResult(ip: string): Result {
         ssh: {},
         smtp: {},
         web: [],
-        dnsResolver: {},
+        dns_resolver: {},
         bittorrent: {},
         bot: {},
         location: {
@@ -121,7 +129,6 @@ export function bogonResult(ip: string): Result {
             validated: false,
             unvalidated_since: '',
         },
-        raw: {} as LookupResponse,
     };
 }
 

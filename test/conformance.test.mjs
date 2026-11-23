@@ -113,6 +113,24 @@ test('an IPv4-mapped address is judged, sent and cached as the IPv4 address it c
     }
 });
 
+// Through 5.19.1 a bogon's `raw` was an empty object, so anything forwarding the
+// answer as served (a proxy's header) forwarded nothing.
+test('a bogon\'s raw is the same answer in the wire\'s names', async () => {
+    const stub = stubFetch({});
+    const c = new VPNDetection({ fetch: stub.fetch });
+    const r = await c.lookup('10.0.0.1');
+
+    assert.equal(r.raw.is_bogon, true);
+    assert.equal(r.raw.ip, '10.0.0.1');
+    for (const f of data.bogonResponse.flagsFalse) {
+        assert.equal(r.raw[f], false, `raw.${f} must be present and false`);
+    }
+    assert.deepEqual(r.raw.dns_resolver, {});
+    assert.equal(r.raw.asn.asn, 0);
+    assert.equal(r.raw.location.country, '');
+    assert.equal(stub.calls.length, 0);
+});
+
 test('a bogon is answered locally in the full max shape', async () => {
     const stub = stubFetch({});
     const c = new VPNDetection({ fetch: stub.fetch });
