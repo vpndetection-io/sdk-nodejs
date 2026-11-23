@@ -1,6 +1,7 @@
 import { isBogon } from '../bogon.js';
 import { VPNDetection, type CacheOptions } from '../client.js';
 import { VPNDetectionError } from '../errors.js';
+import { checkRetries, checkTimeout } from '../transport.js';
 import type { Result } from '../types.js';
 
 import { constraintCount, matchesCondition, missingMembers, type BlockCondition } from './condition.js';
@@ -55,14 +56,17 @@ export interface MiddlewareOptions<Req> {
     /** Ignored when `client` is given. Pass `false` to disable caching. */
     cache?: CacheOptions | false;
     /**
-     * How long a lookup may hold the request, in milliseconds. Default 2500.
+     * How long a lookup may hold the request, in milliseconds, from 1 to
+     * 2147483647. Default 2500. Any other value is refused when the middleware
+     * is built.
      *
      * This sits on the request path, so it is a much tighter bound than the
      * client's own 30s default.
      */
     timeoutMs?: number;
     /**
-     * Retry attempts for a transient failure. Default 0, unlike the client's 2:
+     * Retry attempts for a transient failure, a whole number from 0, refused
+     * otherwise when the middleware is built. Default 0, unlike the client's 2:
      * on a request path, failing open quickly beats holding a visitor while we
      * try again.
      */
@@ -117,9 +121,11 @@ export function createCore<Req>(
         cache: options.cache,
     });
     const selector = options.ipSelector ?? defaultIpSelector;
+    // Checked here, where they are set: a value no lookup can run failed every
+    // request open as a bad_request, so a condition refused nobody.
     const lookupOptions = {
-        timeoutMs: options.timeoutMs ?? 2500,
-        retries: options.retries ?? 0,
+        timeoutMs: checkTimeout(options.timeoutMs ?? undefined) ?? 2500,
+        retries: checkRetries(options.retries) ?? 0,
     };
     const warn = onceEach(options.onWarn ?? ((message) => console.warn(message)));
 

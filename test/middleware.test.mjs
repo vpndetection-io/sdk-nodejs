@@ -94,6 +94,31 @@ for (const c of data.middleware.invalidConditions) {
     });
 }
 
+// Through 5.19.0 each was taken, and every request then failed open as a
+// bad_request: a condition that should have refused a visitor refused nobody.
+test('a timeout or retry count no lookup can run is refused at construction', async () => {
+    for (const [option, value] of [
+        ['timeoutMs', 0], ['timeoutMs', -1], ['timeoutMs', NaN], ['timeoutMs', Infinity], ['timeoutMs', 2 ** 31],
+        ['timeoutMs', 'x'], ['retries', -1], ['retries', 1.5], ['retries', NaN], ['retries', 'x'],
+    ]) {
+        assert.throws(
+            () => createCore({ blockCondition: { isVpn: true }, [option]: value }, () => '45.83.91.1'),
+            (err) => err instanceof VPNDetectionError && err.kind === 'bad_request',
+            `${option} ${String(value)}`,
+        );
+    }
+    // Unset as `??` reads it, and the bounds the client takes.
+    const client = new VPNDetection({
+        cache: false, retries: 0, fetch: async () => new Response(JSON.stringify({ ip: '45.83.91.1', is_vpn: true }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+        }),
+    });
+    for (const options of [{ timeoutMs: null, retries: null }, { timeoutMs: 2 ** 31 - 1, retries: Infinity }, {}]) {
+        const core = createCore({ client: client, blockCondition: { isVpn: true }, ...options }, () => '45.83.91.1');
+        assert.equal((await core.evaluate(req())).blocked, true, JSON.stringify(options));
+    }
+});
+
 // A request shaped like the least a framework can offer, so the core is
 // exercised without one.
 function req(headers = {}, ip = '45.83.91.1') {
