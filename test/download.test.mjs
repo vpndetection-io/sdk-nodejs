@@ -100,6 +100,53 @@ async function start(opts) {
 const tmp = mkdtempSync(join(tmpdir(), 'vpndetection-dl-'));
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
+// Through 5.18.0 every request went out as fetch's `node`.
+test('every request names the SDK, OAuth and the transfer included, and a fetch passed in sees it', async (t) => {
+    const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const o = await start();
+    t.after(() => o.server.close());
+    const client = new VPNDetection({ baseUrl: o.baseUrl, apiKey: 'secret-key', cache: false, retries: 0 });
+
+    await client.database.downloadBytes('cdn_ip_v1', 'csvgz');
+    // Each answered 404 here, or as a batch's own entry: only the header counts.
+    await client.database.list().catch(() => undefined);
+    await client.database.metadata('cdn_ip_v1').catch(() => undefined);
+    await client.database.checksums('cdn_ip_v1', 'csvgz').catch(() => undefined);
+    await client.database.downloads().catch(() => undefined);
+    await client.lookup('8.8.8.8').catch(() => undefined);
+    await client.lookupBatch(['8.8.8.8']).catch(() => undefined);
+    await client.myIp().catch(() => undefined);
+    await client.myEntitlement().catch(() => undefined);
+    await client.oauth.metadata().catch(() => undefined);
+    await client.oauth.deviceAuthorization('cli').catch(() => undefined);
+    await client.oauth.exchangeDeviceCode('cli', 'code').catch(() => undefined);
+    await client.oauth.register(['http://127.0.0.1:1/cb']).catch(() => undefined);
+    await client.oauth.revoke('cli', 'token').catch(() => undefined);
+    assert.deepEqual(o.seen.map((r) => r.path), [
+        '/api/v1/database/download', '/blob', '/api/v1/database/list', '/api/v1/database/metadata',
+        '/api/v1/database/checksum', '/api/v1/database/downloads', '/8.8.8.8', '/batch', '/myip',
+        '/api/v1/entitlement', '/.well-known/oauth-authorization-server', '/oauth/device_authorization',
+        '/oauth/token', '/oauth/register', '/oauth/revoke',
+    ]);
+    for (const r of o.seen) {
+        assert.equal(r.headers['user-agent'], `vpndetection-nodejs/${version}`, r.path);
+    }
+
+    const handed = [];
+    const wrapped = new VPNDetection({
+        baseUrl: o.baseUrl, retries: 0, fetch: async (input, init) => {
+            const request = new Request(input, init);
+            handed.push(request.headers.get('user-agent'));
+            request.headers.set('user-agent', `wrapper/1.0 ${request.headers.get('user-agent')}`);
+            return fetch(request);
+        },
+    });
+    await wrapped.database.downloadBytes('cdn_ip_v1', 'csvgz');
+    assert.deepEqual(handed, [`vpndetection-nodejs/${version}`, `vpndetection-nodejs/${version}`]);
+    assert.deepEqual(o.seen.slice(-2).map((r) => r.headers['user-agent']),
+        [`wrapper/1.0 vpndetection-nodejs/${version}`, `wrapper/1.0 vpndetection-nodejs/${version}`]);
+});
+
 test('downloadUrl returns the Location and does not follow it', async (t) => {
     const o = await start();
     t.after(() => o.server.close());
