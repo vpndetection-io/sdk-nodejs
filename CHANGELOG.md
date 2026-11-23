@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.19.0 - 2026-11-23
+
+### Features
+
+- Name the SDK in every request's User-Agent ([`e6487aa`](https://github.com/vpndetection-io/sdk-nodejs/commit/e6487aa72610e9537d51fd852b08e1ac47d63035))
+
 ## 5.18.0 - 2026-11-22
 
 ### Features
