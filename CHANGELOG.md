@@ -2,6 +2,13 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.19.2 - 2026-11-23
+
+### Fixes
+
+- Refuse a per-call timeoutMs on download, downloadBytes and downloadUrl rather than ignore it ([`77873ad`](https://github.com/vpndetection-io/sdk-nodejs/commit/77873add30402d7c1cae930855ef3b569bc779d4))
+- Give a bogon answer's raw the answer in the wire's names, not an empty object ([`964798a`](https://github.com/vpndetection-io/sdk-nodejs/commit/964798a3dea01a2ef194eb093ba37acbef1eb1bd))
+
 ## 5.19.1 - 2026-11-23
 
 ### Fixes
