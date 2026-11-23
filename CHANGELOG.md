@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.19.1 - 2026-11-23
+
+### Fixes
+
+- Refuse a middleware timeout or retry count no lookup can run when it is built ([`16b949d`](https://github.com/vpndetection-io/sdk-nodejs/commit/16b949dc398963dfb9146fa412aa948fe019a43a))
+
 ## 5.19.0 - 2026-11-23
 
 ### Features
