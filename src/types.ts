@@ -1,12 +1,12 @@
 import type {
     AbuseContact, Asn as WireAsn, BitTorrentDetail, BotDetail, CarrierDetail, ClassDetail, Company, Database,
     DatabaseFormat, DnsResolverDetail, Location, LookupResponse as WireLookupResponse, ProxyDetail, PubproxyDetail,
-    SatelliteDetail, SmtpDetail, SshDetail, Standing, VpnDetail, WebDetail,
+    SatelliteDetail, SmtpDetail, SshDetail, Standing, UserAgentVerdict, VpnDetail, WebDetail,
 } from './generated/types.gen.js';
 
 export type {
     AbuseContact, BitTorrentDetail, BotDetail, CarrierDetail, ClassDetail, Company, DnsResolverDetail, Location,
-    ProxyDetail, PubproxyDetail, SatelliteDetail, SmtpDetail, SshDetail, VpnDetail, WebDetail,
+    ProxyDetail, PubproxyDetail, SatelliteDetail, SmtpDetail, SshDetail, UserAgentVerdict, VpnDetail, WebDetail,
 };
 
 // Members every answer carries that an `Asn` written out by hand before 5.18.0
@@ -17,11 +17,8 @@ export type {
 /** The AS announcing an address. Every answer carries `country` and `rpki_status`. */
 export type Asn = Omit<WireAsn, 'country' | 'rpki_status'> & Partial<Pick<WireAsn, 'country' | 'rpki_status'>>;
 
-/**
- * A lookup's answer as it came off the wire. `user_agent` is left out: it answers
- * a user agent sent with the lookup, which this client sends none of.
- */
-export type LookupResponse = Omit<WireLookupResponse, 'asn' | 'user_agent'> & { asn?: Asn };
+/** A lookup's answer as it came off the wire. */
+export type LookupResponse = Omit<WireLookupResponse, 'asn'> & { asn?: Asn };
 
 // The runtime halves of the three closed vocabularies the API publishes, for a
 // caller that wants to validate or enumerate rather than switch. The generated
@@ -119,6 +116,12 @@ export interface Result {
      * Paid plans. `agents` and `categories` keep the API's order.
      */
     bot?: BotDetail;
+    /**
+     * The agent the lookup's `userAgent` names, and whether this address bears it out: `verified`,
+     * `spoofed`, `unverifiable` or `not_bot`. Only when the lookup sent a user agent, with every
+     * field; never on a bogon, which is answered locally.
+     */
+    userAgent?: UserAgentVerdict;
 
     /**
      * Where the address is, on every answer, with or without a key: every key present, empty
@@ -154,7 +157,7 @@ const RESULT_NAMES: Record<Exclude<keyof LookupResponse, 'is_bogon'>, Exclude<ke
     is_resproxy: 'isResproxy', is_dcproxy: 'isDcproxy', is_mobproxy: 'isMobproxy', is_pubproxy: 'isPubproxy',
     is_anycast: 'isAnycast', is_carrier: 'isCarrier', is_satellite: 'isSatellite', is_ssh: 'isSsh',
     is_smtp: 'isSmtp', is_web: 'isWeb', is_dns_resolver: 'isDnsResolver', is_bittorrent: 'isBittorrent',
-    is_bot: 'isBot', trial_expired: 'trialExpired', cap_reached: 'capReached', bot: 'bot',
+    is_bot: 'isBot', trial_expired: 'trialExpired', cap_reached: 'capReached', bot: 'bot', user_agent: 'userAgent',
     vpn: 'vpn', hosting: 'hosting', relay: 'relay', tor: 'tor', cdn: 'cdn', resproxy: 'resproxy', dcproxy: 'dcproxy',
     mobproxy: 'mobproxy', pubproxy: 'pubproxy', carrier: 'carrier', satellite: 'satellite', ssh: 'ssh', smtp: 'smtp',
     web: 'web', dns_resolver: 'dnsResolver', bittorrent: 'bittorrent', location: 'location', asn: 'asn',

@@ -17,6 +17,7 @@ export const WEB_DETAIL_MEMBERS = [
     'port', 'tls_ok', 'session_ok', 'status_code', 'server', 'location', 'title', 'cert_subject_cn',
     'cert_subject_o', 'cert_issuer_dn', 'cert_browser_trusted', 'tls_version', 'first_seen', 'last_seen',
 ] as const;
+export const USER_AGENT_MEMBERS = ['agent', 'kind', 'verdict'] as const;
 export const BATCH_MEMBERS = ['results', 'errors'] as const;
 export const BATCH_ERROR_MEMBERS = ['status', 'error'] as const;
 export const ENTITLEMENT_MEMBERS = ['org_id', 'apikey', 'plan', 'usage'] as const;
@@ -77,6 +78,8 @@ export const BOT_DETAIL_TYPES: Record<string, Kind> = {
     provider: 'string', provider_name: 'string', agents: 'array', categories: 'array', verified: 'boolean',
     identity: 'string', verified_by: 'string', confidence: 'string', first_seen: 'date', last_seen: 'date',
 };
+// `verdict` is read as any string, so a verdict the API adds comes back as served.
+export const USER_AGENT_TYPES: Record<string, Kind> = { agent: 'string', kind: 'string', verdict: 'string' };
 export const CARRIER_DETAIL_TYPES: Record<string, Kind> = {
     name: 'string', mcc: 'string', mnc: 'string', country: 'string', confidence: 'string',
 };
@@ -252,6 +255,7 @@ export function isLookup(data: unknown): boolean {
         && optional(data['bittorrent'], (bittorrent) => lists(bittorrent, 'clients', isString))
         && optional(data['bot'], (bot) => lists(bot, 'agents', isString) && lists(bot, 'categories', isString))
         && optional(data['web'], (web) => every(web, (row) => typed(row, WEB_DETAIL_MEMBERS, WEB_DETAIL_TYPES)))
+        && optional(data['user_agent'], (verdict) => typed(verdict, USER_AGENT_MEMBERS, USER_AGENT_TYPES))
         && SHARED.every(([member, required, types]) => optional(data[member], (o) => typed(o, required, types)));
 }
 

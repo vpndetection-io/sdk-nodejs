@@ -1,6 +1,6 @@
 export { VPNDetection, DatabaseApi, DEFAULT_BASE_URL } from './client.js';
 export type {
-    Options, CacheOptions, LookupOptions, BatchOptions, DownloadsOptions,
+    Options, CacheOptions, CallOptions, LookupOptions, BatchOptions, DownloadsOptions,
     DownloadOptions,
     DownloadDestination,
 } from './client.js';
@@ -16,7 +16,7 @@ export {
 export type { ErrorKind } from './errors.js';
 export type {
     Result, VpnDetail, ClassDetail, ProxyDetail, PubproxyDetail, CarrierDetail, SatelliteDetail, SshDetail,
-    SmtpDetail, WebDetail, DnsResolverDetail, BitTorrentDetail, BotDetail, Location, Asn, Company, AbuseContact, LookupResponse,
+    SmtpDetail, WebDetail, DnsResolverDetail, BitTorrentDetail, BotDetail, UserAgentVerdict, Location, Asn, Company, AbuseContact, LookupResponse,
 } from './types.js';
 export { DATABASE_FORMATS, STANDINGS, LICENSE_TYPES } from './types.js';
 export type {
