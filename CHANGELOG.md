@@ -2,6 +2,18 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.20.0 - 2026-11-24
+
+### Features
+
+- Send a user agent with a lookup, myIp and a batch, and read the verdict it brings back ([`baf373d`](https://github.com/vpndetection-io/sdk-nodejs/commit/baf373d505d15b81a813f449c8d1f0e4ade179ba))
+- Let a verified crawler through the middleware with allowBots ([`22f57ea`](https://github.com/vpndetection-io/sdk-nodejs/commit/22f57ea10b922f0233a5af59b768e9766a778f97))
+
+### Fixes
+
+- Re-pin the spec to 2026.11.23: twelve first_seen and last_seen members are dates ([`558601d`](https://github.com/vpndetection-io/sdk-nodejs/commit/558601deaed7e29276e0080afa3a2f4077a5c779))
+- Refuse a bot, ssh, smtp, web, dns_resolver or bittorrent first_seen or last_seen that is not a date ([`ab60abf`](https://github.com/vpndetection-io/sdk-nodejs/commit/ab60abff39314de1b11365d75c1ddfc74259e949))
+
 ## 5.19.2 - 2026-11-23
 
 ### Fixes
