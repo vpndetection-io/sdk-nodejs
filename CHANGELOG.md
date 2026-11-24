@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.21.0 - 2026-11-24
+
+### Fixes
+
+- Match a condition on a list member, such as pubproxy.protocols or a web row's port, against any element ([`b721fe8`](https://github.com/vpndetection-io/sdk-nodejs/commit/b721fe8da58e6391e28dfdff363aa09e9bd6d481))
+
 ## 5.20.0 - 2026-11-24
 
 ### Features
