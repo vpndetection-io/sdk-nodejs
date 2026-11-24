@@ -27,6 +27,9 @@ export interface RequestView {
  */
 export type IpSelector<Req> = (request: Req) => string | undefined;
 
+/** How the request's own `User-Agent` is read, for `allowBots`. */
+export type UserAgentSelector<Req> = (request: Req) => string | undefined;
+
 /** What a lookup attached to the request, whether or not it succeeded. */
 export interface Lookup {
     /** The address that was classified, as the selector resolved it. */
@@ -83,7 +86,19 @@ export interface MiddlewareOptions<Req> {
      * become yours.
      */
     failClosed?: boolean;
-    /** What to do when the condition names a member your plan does not serve. Default `warn`. */
+    /**
+     * Let a verified crawler through. Default false. On, the lookup sends the request's own
+     * `User-Agent`, and a request whose answer's `userAgent.verdict` is `verified` is never
+     * blocked, whatever `blockCondition` matches; the answer is still attached. An absent or
+     * empty header sends none. Off, no agent is sent, so the cache keeps one entry per address.
+     * A verdict needs every field (a paid plan or the trial): a served answer without one is
+     * reported once under `onMissingField`.
+     */
+    allowBots?: boolean;
+    /**
+     * What to do when the condition names a member your plan does not serve, or when `allowBots`
+     * sent an agent and the answer carries no verdict. Default `warn`.
+     */
     onMissingField?: MissingFieldAction;
     /** Skip classification for this request entirely. */
     skip?: (request: Req) => boolean;
@@ -101,11 +116,14 @@ export interface Core<Req> {
  * and decide whether the condition matched.
  *
  * Adapters own the framework-shaped parts - reading a request, attaching the
- * answer, and refusing a request - and share everything here.
+ * answer, and refusing a request - and share everything here. `userAgent`
+ * reads the request's `User-Agent`, which `allowBots` needs; an adapter gets
+ * one from `bindSelectors`.
  */
 export function createCore<Req>(
     options: MiddlewareOptions<Req>,
     defaultIpSelector: IpSelector<Req>,
+    userAgent?: UserAgentSelector<Req>,
 ): Core<Req> {
     const condition = options.blockCondition;
     if (condition !== undefined && constraintCount(condition) === 0) {
@@ -113,6 +131,13 @@ export function createCore<Req>(
             'vpndetection: blockCondition constrains nothing, which would block every request. '
             + 'A member set to false or null is ignored; state the positive signals you act on.',
         );
+    }
+    if (options.allowBots !== undefined && options.allowBots !== null && typeof options.allowBots !== 'boolean') {
+        throw new Error(`vpndetection: allowBots must be true or false, got ${typeof options.allowBots}`);
+    }
+    const allowBots = options.allowBots === true;
+    if (allowBots && userAgent === undefined) {
+        throw new Error('vpndetection: allowBots needs the request\'s User-Agent; pass createCore a userAgent selector');
     }
 
     const client = options.client ?? new VPNDetection({
@@ -151,9 +176,11 @@ export function createCore<Req>(
                     + 'trusted-proxy setting or pass an ipSelector that reads your edge\'s header.');
             }
 
+            // The empty header is none, as the client reads it.
+            const agent = allowBots ? userAgent!(request) || undefined : undefined;
             let result: Result;
             try {
-                result = await client.lookup(ip, lookupOptions);
+                result = await client.lookup(ip, agent === undefined ? lookupOptions : { ...lookupOptions, userAgent: agent });
             } catch (err) {
                 return {
                     ip: ip,
@@ -166,10 +193,17 @@ export function createCore<Req>(
             if (condition !== undefined) {
                 reportMissing(condition, result, options.onMissingField ?? 'warn', warn);
             }
+            // A bogon is answered locally, so it was sent nothing and has no verdict to lack.
+            if (agent !== undefined && !result.isBogon && result.userAgent === undefined) {
+                report(options.onMissingField ?? 'warn', warn, 'allowBots sent the request\'s User-Agent, but '
+                    + 'the answer carries no userAgent verdict, so no crawler is let through: a verdict needs '
+                    + 'every field, on a paid plan or the trial.');
+            }
+            const verified = allowBots && result.userAgent?.verdict === 'verified';
             return {
                 ip: ip,
                 result: result,
-                blocked: condition !== undefined && matchesCondition(condition, result),
+                blocked: condition !== undefined && !verified && matchesCondition(condition, result),
             };
         },
     };
@@ -222,6 +256,9 @@ export function bindSelectors<Req>(view: (request: Req) => RequestView) {
             const v = view(request);
             return v.header(name)?.trim() || v.frameworkIp();
         },
+
+        /** The request's own `User-Agent`, which `allowBots` sends. */
+        userAgentSelector: (request: Req) => view(request).header('user-agent'),
     };
 }
 
@@ -236,9 +273,15 @@ function reportMissing(
     if (missing.length === 0) {
         return;
     }
-    const message = `blockCondition names ${missing.join(', ')}, which your plan does not `
+    report(action, warn, `blockCondition names ${missing.join(', ')}, which your plan does not `
         + 'include, so those terms can never match. An absent member means "not in your plan", '
-        + 'not "checked, and no".';
+        + 'not "checked, and no".');
+}
+
+function report(action: MissingFieldAction, warn: (message: string) => void, message: string) {
+    if (action === 'ignore') {
+        return;
+    }
     if (action === 'throw') {
         throw new Error(`vpndetection: ${message}`);
     }
