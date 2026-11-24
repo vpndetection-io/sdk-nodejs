@@ -119,6 +119,11 @@ function matchesObject(
 }
 
 function matchesValue(want: unknown, got: unknown): boolean {
+    // A member the answer holds as a list (pubproxy.protocols, web rows) matches
+    // when any one element does; an object term must match a single element.
+    if (Array.isArray(got)) {
+        return got.some((el) => matchesValue(want, el));
+    }
     if (Array.isArray(want)) {
         return want.some((entry) => matchesValue(entry, got));
     }
