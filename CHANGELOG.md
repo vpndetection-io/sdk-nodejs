@@ -2,6 +2,14 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.21.1 - 2026-11-25
+
+### Fixes
+
+- README: one paid plan, Data; the entitlement example names it ([`44a30d0`](https://github.com/vpndetection-io/sdk-nodejs/commit/44a30d0b914607cc13a069f66f161217a68be4e5))
+- Spec 2026.11.25: doc comments name a paid plan, the entitlement example the Data plan ([`01facf0`](https://github.com/vpndetection-io/sdk-nodejs/commit/01facf00d43dcfded5eb3f4f4a71fbe896a4a6de))
+- Doc comments: the bot detail comes on a paid plan ([`586f828`](https://github.com/vpndetection-io/sdk-nodejs/commit/586f8288c8dfbc52bac8ed3c1f5d1363eb4a2d7f))
+
 ## 5.21.0 - 2026-11-24
 
 ### Fixes
