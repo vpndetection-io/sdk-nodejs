@@ -32,7 +32,7 @@ console.log(result.asn?.name);          // who runs the announcing network
 
 ### With an API key
 
-Every paid plan answers every field: `is_hosting`, `is_cdn` and the four proxy flags as well, the carrier and satellite flags, the five service flags (SSH, SMTP, web, DNS resolver and BitTorrent), `bot` (whose bot it is and whether its operator vouches for the address), city-level `location`, the `company` and the `abuse` contact, the provider (its ID and its name), confidence and last-seen detail behind each flag, and `user_agent` for a lookup that sends one. The plans differ only in how many lookups they include, and a free account tries every field. Create a key in the [console](https://app.vpndetection.io), then pass it in:
+A paid plan answers every field: `is_hosting`, `is_cdn` and the four proxy flags as well, the carrier and satellite flags, the five service flags (SSH, SMTP, web, DNS resolver and BitTorrent), `bot` (whose bot it is and whether its operator vouches for the address), city-level `location`, the `company` and the `abuse` contact, the provider (its ID and its name), confidence and last-seen detail behind each flag, and `user_agent` for a lookup that sends one. Its quotas differ only in how many lookups they include, and a free account tries every field. Create a key in the [console](https://app.vpndetection.io), then pass it in:
 
 ```js
 const client = new VPNDetection({ apiKey: process.env.VPNDETECTION_API_KEY });
@@ -70,8 +70,8 @@ The empty string sends none, and `userAgent` is absent on an answer to a lookup 
 
 ```js
 const ent = await client.myEntitlement();
-console.log(ent.plan.name);         // Max, what to show
-console.log(ent.plan.key);          // max, what to compare against
+console.log(ent.plan.name);         // Data, what to show
+console.log(ent.plan.key);          // data_4, what to compare against
 console.log(ent.usage.requests);    // 580
 console.log(ent.usage.window_end);  // when the allowance resets
 ```
