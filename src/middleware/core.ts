@@ -213,7 +213,9 @@ export function createCore<Req>(
                 };
             }
             if (condition !== undefined) {
-                reportMissing(condition, result, options.onMissingField ?? 'warn', warn);
+                // A request that sent no agent has no verdict to lack, whatever the plan serves.
+                reportMissing(condition, result, options.onMissingField ?? 'warn', warn,
+                    allowBots && agent === undefined ? ['userAgent'] : []);
             }
             // A bogon is answered locally, so it was sent nothing and has no verdict to lack.
             if (agent !== undefined && !result.isBogon && result.userAgent === undefined) {
@@ -324,12 +326,12 @@ export function bindSelectors<Req>(view: (request: Req) => RequestView) {
 
 function reportMissing(
     condition: BlockCondition | BlockCondition[], result: Result,
-    action: MissingFieldAction, warn: (message: string) => void,
+    action: MissingFieldAction, warn: (message: string) => void, unsent: string[],
 ) {
     if (action === 'ignore') {
         return;
     }
-    const missing = missingMembers(condition, result);
+    const missing = missingMembers(condition, result).filter((member) => !unsent.includes(member));
     if (missing.length === 0) {
         return;
     }

@@ -165,6 +165,28 @@ test('past the bound, an address its operator vouches for still passes', async (
     assert.equal(browser.blocked, true, 'a browser on that address is judged as the condition says');
 });
 
+test('a condition on the verdict is no plan gap for a request that sent no agent', async () => {
+    const forged = { userAgent: { verdict: 'spoofed' } };
+    for (const headers of [{ 'user-agent': CHROME }, {}]) {
+        const warnings = [];
+        const o = origin('spoofed');
+        const c = core(o, { allowBots: true, blockCondition: forged, onMissingField: 'throw', onWarn: (m) => warnings.push(m) });
+        const lookup = await c.evaluate(request(headers));
+        assert.equal(lookup.blocked, false, JSON.stringify(headers));
+        assert.deepEqual(o.agents, [null]);
+        assert.deepEqual(warnings, []);
+    }
+    const o = origin('spoofed');
+    const c = core(o, { allowBots: true, blockCondition: forged, onMissingField: 'throw' });
+    for (let n = 1; n <= 4; n++) {
+        await c.evaluate(request({ 'user-agent': crawler(n) }));
+    }
+    assert.equal((await c.evaluate(request({ 'user-agent': crawler(5) }))).blocked, false, 'past the bound, no gap either');
+    const warned = [];
+    await core(origin('spoofed'), { blockCondition: forged, onWarn: (m) => warned.push(m) }).evaluate(request());
+    assert.equal(warned.length, 1, 'off, a condition on the verdict can never match, and says so');
+});
+
 test('allowBots is checked when the middleware is built', () => {
     const o = origin('verified');
     assert.throws(() => createCore({ client: o.client, allowBots: true }, selectors.defaultIpSelector),
