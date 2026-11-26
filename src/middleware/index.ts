@@ -1,4 +1,4 @@
-export { bindSelectors, createCore } from './core.js';
+export { bindSelectors, createCore, MAX_AGENTS_PER_ADDRESS, namesCrawler } from './core.js';
 export type {
     Core, IpSelector, Lookup, MiddlewareOptions, MissingFieldAction, RequestView, UserAgentSelector,
 } from './core.js';

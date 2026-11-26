@@ -1,3 +1,5 @@
+import { LRUCache } from 'lru-cache';
+
 import { isBogon } from '../bogon.js';
 import { VPNDetection, type CacheOptions } from '../client.js';
 import { VPNDetectionError } from '../errors.js';
@@ -5,6 +7,22 @@ import { checkRetries, checkTimeout } from '../transport.js';
 import type { Result } from '../types.js';
 
 import { constraintCount, matchesCondition, missingMembers, type BlockCondition } from './condition.js';
+import { CRAWLER_TERMS } from './crawlers.gen.js';
+
+/** The most crawler agents one address is looked up with while it is remembered. */
+export const MAX_AGENTS_PER_ADDRESS = 4;
+
+/** How long an address's crawler agents are remembered: the client's default cache TTL. */
+const AGENTS_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Whether a `User-Agent` names a crawler, the only kind of agent whose verdict can be
+ * `verified` or `spoofed`. It errs toward a match, which costs a lookup.
+ */
+export function namesCrawler(agent: string): boolean {
+    const lower = agent.replace(/[A-Z]/g, (c) => c.toLowerCase());
+    return CRAWLER_TERMS.some((term) => lower.includes(term));
+}
 
 /**
  * Enough of an incoming request for a selector to work with, whatever
@@ -88,11 +106,14 @@ export interface MiddlewareOptions<Req> {
     failClosed?: boolean;
     /**
      * Let a verified crawler through. Default false. On, the lookup sends the request's own
-     * `User-Agent`, and a request whose answer's `userAgent.verdict` is `verified` is never
-     * blocked, whatever `blockCondition` matches; the answer is still attached. An absent or
-     * empty header sends none. Off, no agent is sent, so the cache keeps one entry per address.
-     * A verdict needs every field (a paid plan or the trial): a served answer without one is
-     * reported once under `onMissingField`.
+     * `User-Agent` when it names a crawler, and a request whose answer's `userAgent.verdict` is
+     * `verified` is never blocked, whatever `blockCondition` matches; the answer is still attached.
+     * Any other agent, an absent or an empty header sends none, since the verdict could only be
+     * `not_bot`. One address is looked up with at most {@link MAX_AGENTS_PER_ADDRESS} crawler
+     * agents an hour: past those, the lookup sends none, and the request passes as a crawler only
+     * where the answer's `bot.verified` is true. Off, no agent is sent, so the cache keeps one entry
+     * per address. A verdict needs every field (a paid plan or the trial): a served answer without
+     * one is reported once under `onMissingField`.
      */
     allowBots?: boolean;
     /**
@@ -153,6 +174,7 @@ export function createCore<Req>(
         retries: checkRetries(options.retries) ?? 0,
     };
     const warn = onceEach(options.onWarn ?? ((message) => console.warn(message)));
+    const agents = allowBots ? crawlerAgents() : undefined;
 
     return {
         evaluate: async (request: Req): Promise<Lookup | undefined> => {
@@ -176,8 +198,8 @@ export function createCore<Req>(
                     + 'trusted-proxy setting or pass an ipSelector that reads your edge\'s header.');
             }
 
-            // The empty header is none, as the client reads it.
-            const agent = allowBots ? userAgent!(request) || undefined : undefined;
+            const claim = agents?.claim(ip, userAgent!(request));
+            const agent = claim?.agent;
             let result: Result;
             try {
                 result = await client.lookup(ip, agent === undefined ? lookupOptions : { ...lookupOptions, userAgent: agent });
@@ -199,12 +221,50 @@ export function createCore<Req>(
                     + 'the answer carries no userAgent verdict, so no crawler is let through: a verdict needs '
                     + 'every field, on a paid plan or the trial.');
             }
-            const verified = allowBots && result.userAgent?.verdict === 'verified';
+            const verified = claim !== undefined && (claim.agent === undefined
+                ? result.bot?.verified === true
+                : result.userAgent?.verdict === 'verified');
             return {
                 ip: ip,
                 result: result,
                 blocked: condition !== undefined && !verified && matchesCondition(condition, result),
             };
+        },
+    };
+}
+
+interface CrawlerClaim {
+    /** The agent the lookup sends, absent past the address's bound. */
+    agent?: string;
+}
+
+/**
+ * The crawler agents each address was looked up with. Only a crawler's agent is sent, and an
+ * address claiming more than {@link MAX_AGENTS_PER_ADDRESS} of them in an hour sends none past
+ * those, so a visitor inventing an agent per request spends at most that many lookups.
+ */
+function crawlerAgents() {
+    const seen = new LRUCache<string, string[]>({
+        max: 10_000,
+        ttl: AGENTS_TTL_MS,
+        maxSize: 4_000_000,
+        sizeCalculation: (list) => list.reduce((n, a) => n + a.length, 0) || 1,
+    });
+    return {
+        /** What this request's agent comes to, or `undefined` when it names no crawler. */
+        claim: (ip: string, header: string | undefined): CrawlerClaim | undefined => {
+            if (header === undefined || header === '' || !namesCrawler(header)) {
+                return undefined;
+            }
+            const known = seen.get(ip) ?? [];
+            if (known.includes(header)) {
+                return { agent: header };
+            }
+            if (known.length >= MAX_AGENTS_PER_ADDRESS) {
+                return {};
+            }
+            seen.set(ip, [...known, header], { noUpdateTTL: true });
+            return { agent: header };
         },
     };
 }
