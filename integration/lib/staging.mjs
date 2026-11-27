@@ -42,6 +42,8 @@ export const MEMBERS = {
 // The network and service members, read by the client from 5.17.0: an older
 // install drops them, so they join the lists only once it reads them.
 export const READS_NETWORK_MEMBERS = needsVersion('5.17.0', 'the network and service members') === false;
+// An answer without the AS's type is read from 5.23.0; before it, one is refused as unreadable.
+export const READS_ABSENT_AS_TYPE = needsVersion('5.23.0', 'an answer without the AS type') === false;
 const WEB_KEYS = [
     'port', 'tls_ok', 'session_ok', 'status_code', 'server', 'location', 'title', 'cert_subject_cn',
     'cert_subject_o', 'cert_issuer_dn', 'cert_browser_trusted', 'tls_version', 'first_seen', 'last_seen',
@@ -69,7 +71,7 @@ if (READS_NETWORK_MEMBERS) {
 }
 
 // is_bot and bot, read by the client from 5.18.0. A populated bot carries its ten
-// documented keys; Unlimited answers is_bot and leaves bot out.
+// documented keys; both are a paid plan's, so Unlimited's answer may lack either.
 if (needsVersion('5.18.0', 'is_bot and bot') === false) {
     MEMBERS.bot = {
         required: [
@@ -223,6 +225,17 @@ export function assertShape(r) {
     if (READS_NETWORK_MEMBERS) {
         assertWeb(r);
     }
+    if (READS_ABSENT_AS_TYPE && r.asn !== undefined) {
+        assertAsType(r);
+    }
+}
+
+// The AS's type is a paid plan's: the API serves it on Unlimited until it stops, so an answer may or may
+// not carry it. It is a string either way from 5.23.0, which reads the one that did not as ''.
+function assertAsType(r) {
+    const sent = r.raw.asn.type;
+    assert.ok(sent === undefined || typeof sent === 'string', 'asn.type is a string when the API sends it');
+    assert.equal(r.asn.type, sent ?? '', 'asn.type reads as served, and as the empty string where the API sent none');
 }
 
 // A row per port that answered, and an empty list when no web server did.
