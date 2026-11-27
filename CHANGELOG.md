@@ -2,6 +2,12 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.23.0 - 2026-11-27
+
+### Features
+
+- Read a keyless answer without the network's type ([`cde5376`](https://github.com/vpndetection-io/sdk-nodejs/commit/cde5376abdc61440e29b2e5612bd88fee2dbe17a))
+
 ## 5.22.1 - 2026-11-26
 
 ### Fixes
