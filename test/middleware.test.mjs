@@ -62,26 +62,83 @@ for (const c of data.middleware.conditions) {
     });
 }
 
-// Every answer carries `is_bot`, so a condition on it blocks a bot's public address
-// and lets any other through, on any plan. A bogon answers it false.
+// `is_bot` is a paid plan's: a condition on it blocks a bot's address and lets any other through, and on
+// Unlimited's answer, which lacks it, it is a plan gap that never matches. A bogon answers it false.
 test('an isBot condition blocks a served bot and passes anything else', async () => {
     const bodies = Object.fromEntries(data.lookup.map((c) => [c.name, c.body]));
     const answers = [
-        [bodies['paid-verified-bot'], true], [bodies['unlimited-bot'], true],
-        [bodies['unlimited-anycast-hostname'], false], [bodies['paid-satellite'], false],
+        [bodies['paid-verified-bot'], true, []], [bodies['unlimited-bot'], false, ['isBot']],
+        [bodies['unlimited-anycast-hostname'], false, ['isBot']], [bodies['paid-satellite'], false, []],
     ];
-    for (const [served, blocked] of answers) {
+    for (const [served, blocked, missing] of answers) {
         assert.ok(served !== undefined && !isBogon(served.ip), 'a public address from the corpus');
-        const core = createCore({ client: clientServing(served), blockCondition: { isBot: true } }, defaultIpSelector);
+        const warned = [];
+        const core = createCore({
+            client: clientServing(served), blockCondition: { isBot: true }, onWarn: (m) => warned.push(m),
+        }, defaultIpSelector);
         const out = await core.evaluate(req({}, served.ip));
         assert.equal(out.error, undefined, served.ip);
         assert.equal(out.ip, served.ip);
         assert.equal(out.result.isBot, served.is_bot, served.ip);
         assert.equal(out.blocked, blocked, served.ip);
+        assert.deepEqual(missingMembers({ isBot: true }, out.result), missing, served.ip);
+        assert.equal(warned.length, missing.length, `${served.ip}: ${warned.join('; ')}`);
     }
     const bogon = await new VPNDetection().lookup('10.0.0.1');
     assert.equal(matchesCondition({ isBot: true }, bogon), false);
     assert.deepEqual(missingMembers({ isBot: true }, bogon), []);
+});
+
+// The AS's type is a paid plan's, and Unlimited's answer lacks it. `Result` keeps it a string, so it reads
+// '' there, and the core must go by what the API sent: '' is no value, so no condition may match it, and one
+// naming the member is reported by its path, from the cache as from the wire.
+test('a condition on the AS type never matches an answer that lacks it, and is reported by its path', async () => {
+    const bodies = Object.fromEntries(data.lookup.map((c) => [c.name, c.body]));
+    const keyless = bodies['unlimited-location-asn'];
+    assert.ok(!('type' in keyless.asn), 'the corpus answer lacks the AS type');
+    const conditions = [
+        { asn: { type: 'hosting' } }, { asn: { type: ['isp', 'hosting'] } }, { asn: { type: '' } },
+        { asn: { type: ['', 'isp'] } }, [{ isTor: true }, { asn: { type: '' } }],
+    ];
+    for (const condition of conditions) {
+        const label = JSON.stringify(condition);
+        for (const cache of [false, undefined]) {
+            const client = clientServing(keyless, { cache: cache });
+            const result = await client.lookup(keyless.ip);
+            assert.equal(result.asn.type, '', label);
+            assert.equal('type' in result.raw.asn, false, label);
+            const warned = [];
+            const core = createCore({
+                client: client, blockCondition: condition, onWarn: (m) => warned.push(m),
+            }, defaultIpSelector);
+            // Twice, so the second is a cached answer where the client caches.
+            for (const round of [1, 2]) {
+                const out = await core.evaluate(req({}, keyless.ip));
+                assert.equal(out.blocked, false, `${label} round ${round}`);
+            }
+            assert.deepEqual(missingMembers(condition, result), ['asn.type'], label);
+            assert.equal(matchesCondition(condition, result), false, label);
+            assert.equal(warned.length, 1, `${label}: ${warned.join('; ')}`);
+            assert.match(warned[0], /blockCondition names asn\.type,/, label);
+        }
+    }
+    const strict = createCore({
+        client: clientServing(keyless), blockCondition: { asn: { type: 'hosting' } }, onMissingField: 'throw',
+    }, defaultIpSelector);
+    await assert.rejects(() => strict.evaluate(req({}, keyless.ip)), /blockCondition names asn\.type,/);
+
+    // An answer that carries the type is judged on it, and reports nothing.
+    const paid = bodies['flags-without-detail'];
+    assert.equal(paid.asn.type, 'hosting');
+    for (const [want, blocked] of [['hosting', true], [['isp', 'Hosting'], true], ['isp', false], ['', false]]) {
+        const warned = [];
+        const core = createCore({
+            client: clientServing(paid), blockCondition: { asn: { type: want } }, onWarn: (m) => warned.push(m),
+        }, defaultIpSelector);
+        const out = await core.evaluate(req({}, paid.ip));
+        assert.equal(out.blocked, blocked, JSON.stringify(want));
+        assert.deepEqual(warned, [], JSON.stringify(want));
+    }
 });
 
 for (const c of data.middleware.invalidConditions) {

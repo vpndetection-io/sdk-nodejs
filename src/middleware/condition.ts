@@ -1,4 +1,4 @@
-import type { Result } from '../types.js';
+import { HELD_MEMBERS, type Result } from '../types.js';
 
 /**
  * A bound on a numeric member. Every key present must hold, so
@@ -46,19 +46,20 @@ export function matchesCondition(
     condition: BlockCondition | BlockCondition[], result: Result,
 ): boolean {
     const any = Array.isArray(condition) ? condition : [condition];
-    return any.some((one) => matchesObject(
-        one as Record<string, unknown>, result as unknown as Record<string, unknown>,
-    ));
+    const answer = served(result);
+    return any.some((one) => matchesObject(one as Record<string, unknown>, answer));
 }
 
 /**
- * The top-level members a condition names that this answer did not carry.
+ * The members a condition names that this answer did not carry: a top-level member, or a paid one inside
+ * an object every plan gets that `Result` reads as empty, by its path (`asn.type`).
  *
  * A field your plan does not include is absent rather than false, so a
  * condition naming one can never match and the block would silently never
  * fire. Gating is per top-level member, which is why only the first segment of
  * each path is checked: `vpn` present but empty is a real answer meaning the
- * flag is false, not a plan gap.
+ * flag is false, not a plan gap. The one member read inside an object is the
+ * AS's `type`, which Unlimited's answer lacks and `Result` reads as `''`.
  *
  * A locally answered bogon needs no special case: it is synthesized in the
  * widest shape, so every member is present and nothing reads as missing. The
@@ -69,15 +70,52 @@ export function missingMembers(
     condition: BlockCondition | BlockCondition[], result: Result,
 ): string[] {
     const any = Array.isArray(condition) ? condition : [condition];
+    const answer = served(result);
     const missing = new Set<string>();
     for (const one of any) {
         for (const [member, want] of Object.entries(one as Record<string, unknown>)) {
-            if (constraintCount(want) > 0 && !(member in result)) {
+            if (constraintCount(want) === 0) {
+                continue;
+            }
+            if (!(member in answer)) {
                 missing.add(member);
+                continue;
+            }
+            const held = Object.hasOwn(HELD_MEMBERS, member) ? HELD_MEMBERS[member]! : [];
+            const got = answer[member];
+            for (const name of held) {
+                if (isRecord(want) && !isNumericBound(want) && isRecord(got)
+                    && constraintCount(want[name]) > 0 && !(name in got)) {
+                    missing.add(`${member}.${name}`);
+                }
             }
         }
     }
     return [...missing];
+}
+
+// The answer as the API served it: a member `Result` reads as empty, though the wire left it out, is
+// absent here, so it neither matches nor reads as a value. `raw` is what the API sent, and it travels
+// with the answer through the cache.
+function served(result: Result): Record<string, unknown> {
+    const answer = result as unknown as Record<string, unknown>;
+    const wire = answer['raw'];
+    let view = answer;
+    for (const [member, held] of Object.entries(HELD_MEMBERS)) {
+        const read = answer[member];
+        const sent = isRecord(wire) ? wire[member] : undefined;
+        if (isRecord(read) && isRecord(sent)) {
+            const left = held.filter((name) => !(name in sent));
+            if (left.length > 0) {
+                const trimmed = { ...read };
+                for (const name of left) {
+                    delete trimmed[name];
+                }
+                view = { ...view, [member]: trimmed };
+            }
+        }
+    }
+    return view;
 }
 
 /**

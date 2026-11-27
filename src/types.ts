@@ -14,10 +14,22 @@ export type {
 // client still refuses an answer without them. `Pick` fails to compile once the
 // spec drops either member, and the suite fails once it stops requiring them.
 
-/** The AS announcing an address. Every answer carries `country` and `rpki_status`. */
-export type Asn = Omit<WireAsn, 'country' | 'rpki_status'> & Partial<Pick<WireAsn, 'country' | 'rpki_status'>>;
+/**
+ * The members of an object every plan gets that Unlimited's answer lacks, though `Result` keeps their
+ * public type until the next major, so an absent one reads as the empty string. `raw` says which the
+ * API sent: the middleware reads it, never the empty string.
+ */
+export const HELD_MEMBERS: Readonly<Record<string, readonly string[]>> = { asn: ['type'] };
 
-/** A lookup's answer as it came off the wire. */
+/**
+ * The AS announcing an address. Every answer carries `country` and `rpki_status`. The spec makes `type`
+ * a paid plan's, so an answer may lack it, and it stays a string in this type until the next major:
+ * `''` in `Result`, absent from `raw`.
+ */
+export type Asn = Omit<WireAsn, 'type' | 'country' | 'rpki_status'> & Required<Pick<WireAsn, 'type'>>
+    & Partial<Pick<WireAsn, 'country' | 'rpki_status'>>;
+
+/** A lookup's answer as it came off the wire. `asn.type` is a paid plan's, so Unlimited's answer lacks it. */
 export type LookupResponse = Omit<WireLookupResponse, 'asn'> & { asn?: Asn };
 
 // The runtime halves of the three closed vocabularies the API publishes, for a
@@ -44,7 +56,7 @@ export const LICENSE_TYPES: readonly NonNullable<Database['license_type']>[] = [
  * could not check", so `undefined` and `false` are genuinely different answers:
  * `undefined` is "not in your plan", `false` is "checked, and no". Use
  * `?? false` when you only care whether the address is flagged. The same holds
- * inside `location` and `asn`, whose paid members are absent on Unlimited.
+ * inside `location` and `asn`, whose paid members are absent on Unlimited (`asn.type` reads `''`).
  *
  * A detail object that is present but empty (`{}`, and `web`'s `[]`) means the
  * flag above it is false. A populated one always carries every one of its keys.
@@ -79,7 +91,9 @@ export interface Result {
     isBittorrent?: boolean;
     /**
      * Whether an automated client uses the address, such as a search engine's or an AI company's
-     * crawler, an uptime monitor or a webhook sender. Every plan includes this; `bot` says whose.
+     * crawler, an uptime monitor, an internet scanner or a webhook sender. `bot` says whose, what it
+     * does and whether its operator vouches for the address. On a paid plan or the trial, so it is
+     * `undefined` on Unlimited's answer.
      */
     isBot?: boolean;
     /**
@@ -131,7 +145,9 @@ export interface Result {
     location?: Location;
     /**
      * The AS announcing the address, on every answer, with or without a key: `asn` is 0 where none
-     * does. `country` and `rpki_status` are on every plan too.
+     * does. `country` and `rpki_status` are on every plan too. `type`, the kind of network, is a paid
+     * plan's or the trial's: Unlimited's answer lacks it, it reads `''` here, and `raw.asn` has it only
+     * when the API sent it.
      */
     asn?: Asn;
     /** The organization the address is assigned to. */
@@ -164,12 +180,18 @@ const RESULT_NAMES: Record<Exclude<keyof LookupResponse, 'is_bogon'>, Exclude<ke
     company: 'company', hostname: 'hostname', abuse: 'abuse',
 };
 
-export function toResult(body: LookupResponse): Result {
+export function toResult(body: LookupResponse | WireLookupResponse): Result {
     const out: Record<string, unknown> = {};
     for (const [from, to] of Object.entries<string>(RESULT_NAMES)) {
         if (from in body && body[from as keyof LookupResponse] !== undefined) {
             out[to] = body[from as keyof LookupResponse];
         }
+    }
+    // Held at its public type: an answer without the AS's `type` reads `''`, and `raw` keeps what was sent.
+    const asn = out['asn'];
+    if (typeof asn === 'object' && asn !== null) {
+        const held = Object.fromEntries((HELD_MEMBERS['asn'] ?? []).filter((m) => !(m in asn)).map((m) => [m, '']));
+        out['asn'] = { ...asn, ...held };
     }
     out['isBogon'] = body.is_bogon === true;
     out['raw'] = body;

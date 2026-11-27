@@ -183,7 +183,10 @@ test('lookup preserves absent-versus-false across every plan shape', async () =>
         }
         for (const obj of DETAIL_KEYS) {
             if (c.expect[obj] !== undefined) {
-                assert.deepEqual(r[camel(obj)], c.expect[obj], `${c.name}: ${obj}`);
+                // An AS the API sent without its type reads it as '', its public type; raw keeps what was sent.
+                const read = obj === 'asn' && !('type' in c.expect[obj]) ? { ...c.expect[obj], type: '' } : c.expect[obj];
+                assert.deepEqual(r[camel(obj)], read, `${c.name}: ${obj}`);
+                assert.deepEqual(r.raw[obj], c.expect[obj], `${c.name}: raw ${obj} is what was sent`);
             }
         }
     }

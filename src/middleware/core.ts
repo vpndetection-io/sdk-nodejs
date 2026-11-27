@@ -118,7 +118,8 @@ export interface MiddlewareOptions<Req> {
     allowBots?: boolean;
     /**
      * What to do when the condition names a member your plan does not serve, or when `allowBots`
-     * sent an agent and the answer carries no verdict. Default `warn`.
+     * sent an agent and the answer carries no verdict. Default `warn`. Without a key that includes
+     * `isBot` and `asn.type`, which are a paid plan's: such a term never matches.
      */
     onMissingField?: MissingFieldAction;
     /** Skip classification for this request entirely. */

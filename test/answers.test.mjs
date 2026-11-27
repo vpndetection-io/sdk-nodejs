@@ -315,6 +315,50 @@ test('an AS without its country or RPKI status is a retried server_error', async
     }
 }));
 
+// The AS's type is a paid plan's, so Unlimited's answer lacks it. It reads, as a lookup, myIp and a batch
+// entry, and `Result` keeps its public type: '' where the API sent none, and `raw` is what it sent. One
+// that is present reads as served; through 5.22.1 an answer without it was no answer.
+test('an AS without its type is read, and one with a null or non-string type is a retried server_error', async (t) => fastBackoff(t, async () => {
+    const asn = {
+        asn: 15169, name: 'Google LLC', domain: 'google.com', prefix: '66.249.64.0/20', country: 'US', rpki_status: 'valid',
+    };
+    const calls = [[(c) => c.lookup(IP), 'lookup'], [(c) => c.myIp(), 'myIp']];
+    for (const [call, name] of calls) {
+        const lean = rawClient(body(JSON.stringify({ ip: IP, is_vpn: false, asn: asn })));
+        const result = await call(lean.client);
+        assert.equal(result.asn.type, '', `${name} reads the absent type as the empty string`);
+        assert.deepEqual(result.asn, { ...asn, type: '' }, name);
+        assert.deepEqual(result.raw.asn, asn, `${name}: raw is what was sent`);
+        assert.equal(lean.calls.length, 1, `${name} is read, not retried`);
+
+        const full = rawClient(body(JSON.stringify({ ip: IP, is_vpn: false, asn: { ...asn, type: 'hosting' } })));
+        const served = await call(full.client);
+        assert.equal(served.asn.type, 'hosting', name);
+        assert.equal(served.raw.asn.type, 'hosting', name);
+
+        for (const type of [null, 1, true, ['hosting'], {}]) {
+            const c = rawClient(body(JSON.stringify({ ip: IP, is_vpn: false, asn: { ...asn, type: type } })));
+            await assert.rejects(() => call(c.client), (err) => {
+                assert.equal(err.kind, 'server_error', `${name} ${JSON.stringify(type)}: ${err.message}`);
+                assert.equal(err.status, 200, `${name} ${JSON.stringify(type)}`);
+                return true;
+            });
+            assert.equal(c.calls.length, 3, `${name} ${JSON.stringify(type)} is retried`);
+        }
+    }
+    const answer = {
+        results: {
+            [IP]: { ip: IP, is_vpn: false, asn: asn },
+            [OTHER]: { ip: OTHER, is_vpn: false, asn: { ...asn, type: null } },
+        },
+        errors: {},
+    };
+    const out = await rawClient(body(JSON.stringify(answer))).client.lookupBatch([IP, OTHER]);
+    assert.equal(out.get(IP).asn.type, '', 'batch reads the absent type');
+    assert.deepEqual(out.get(IP).raw.asn, asn, 'batch: raw is what was sent');
+    assert.equal(out.get(OTHER).kind, 'server_error', 'batch null type');
+}));
+
 // `checksums` hands back the digests alone, so through 5.10.0 nothing read `id` or
 // `format`, and an answer without either, or with one null or of another type, came back.
 test('a checksum answer without its id or format is a retried server_error', async (t) => fastBackoff(t, async () => {
