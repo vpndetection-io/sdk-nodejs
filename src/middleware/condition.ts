@@ -61,14 +61,18 @@ export function matchesCondition(
  * flag is false, not a plan gap. The one member read inside an object is the
  * AS's `type`, which Unlimited's answer lacks and `Result` reads as `''`.
  *
- * A locally answered bogon needs no special case: it is synthesized in the
- * widest shape, so every member is present and nothing reads as missing. The
- * corpus pins that, because narrowing the synthesized shape would start
+ * A bogon's answer reports nothing missing: it is synthesized in the widest
+ * shape, so every member is present but a user agent's verdict, which the API
+ * answers for a bogon and the client does not, and which no plan gap explains.
+ * The corpus pins the rest, because narrowing the synthesized shape would start
  * reporting a plan gap on every private address.
  */
 export function missingMembers(
     condition: BlockCondition | BlockCondition[], result: Result,
 ): string[] {
+    if (result.isBogon) {
+        return [];
+    }
     const any = Array.isArray(condition) ? condition : [condition];
     const answer = served(result);
     const missing = new Set<string>();

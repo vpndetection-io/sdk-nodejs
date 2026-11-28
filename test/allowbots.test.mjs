@@ -1,13 +1,14 @@
 // `allowBots`: a crawler's User-Agent sent with its lookup, at most four an address, and a verified
 // crawler let through whatever the condition matches. Every request here comes
-// from a public peer, since a bogon is answered locally and would pass vacuously.
+// from a public peer, since a bogon is answered locally and would pass vacuously,
+// but for the one test of the bogon itself.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { VPNDetection } from '../dist/index.js';
-import { bindSelectors, createCore, MAX_AGENTS_PER_ADDRESS, namesCrawler } from '../dist/middleware/index.js';
+import { bindSelectors, createCore, MAX_AGENTS_PER_ADDRESS, missingMembers, namesCrawler } from '../dist/middleware/index.js';
 
 const CORPUS = JSON.parse(readFileSync(new URL('../testdata/testdata.json', import.meta.url), 'utf8')).crawlerAgents;
 
@@ -192,4 +193,44 @@ test('allowBots is checked when the middleware is built', () => {
     assert.throws(() => createCore({ client: o.client, allowBots: true }, selectors.defaultIpSelector),
         /User-Agent/);
     assert.throws(() => core(o, { allowBots: 'yes' }), /allowBots/);
+});
+
+// A bogon peer, local development behind no proxy, is answered locally in the widest shape and carries
+// no verdict, and that is no plan gap: onMissingField 'throw' answered a crawler's request there with an
+// error, and 'warn' said the plan lacked the member. Every peer and action is judged, so a failure names
+// each one it fails for.
+test('a bogon peer sending a crawler agent is no plan gap, whether onMissingField throws or warns', async () => {
+    const forged = { userAgent: { verdict: 'spoofed' } };
+    const problems = [];
+    for (const peer of ['127.0.0.1', '10.0.0.1', '::1']) {
+        for (const action of ['throw', 'warn']) {
+            const label = `${peer}, ${action}`;
+            const o = origin('spoofed');
+            const warnings = [];
+            const c = core(o, {
+                allowBots: true, blockCondition: forged, onMissingField: action, onWarn: (m) => warnings.push(m),
+            });
+            let lookup;
+            try {
+                lookup = await c.evaluate(request({ 'user-agent': GOOGLEBOT }, peer));
+            } catch (err) {
+                problems.push(`${label}: reported a plan gap for a bogon: ${err.message}`);
+                continue;
+            }
+            if (lookup.error !== undefined || lookup.blocked || lookup.result?.isBogon !== true) {
+                problems.push(`${label}: want an unblocked bogon answer, got ${JSON.stringify(lookup)}`);
+            }
+            if (o.agents.length !== 0) {
+                problems.push(`${label}: a bogon reached the origin: ${JSON.stringify(o.agents)}`);
+            }
+            for (const message of warnings.filter((m) => !/not a public address/.test(m))) {
+                problems.push(`${label}: warned of a plan gap: ${message}`);
+            }
+            const missing = missingMembers(forged, lookup.result);
+            if (missing.length !== 0) {
+                problems.push(`${label}: missingMembers named ${missing} for a bogon`);
+            }
+        }
+    }
+    assert.deepEqual(problems, []);
 });
