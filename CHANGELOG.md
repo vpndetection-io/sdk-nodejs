@@ -2,6 +2,13 @@
 
 What each release changed for you, newest first. Each line is a commit's summary, linked to its full description and diff. Releases before 5.2.2 are described by their release commits.
 
+## 5.23.1 - 2026-11-28
+
+### Fixes
+
+- Middleware: a bogon's answer reports no missing member ([`7976ae8`](https://github.com/vpndetection-io/sdk-nodejs/commit/7976ae83c774098f181c79141c37e400196f7fe8))
+- Re-pin the spec to 2026.11.27: wording only ([`09dc584`](https://github.com/vpndetection-io/sdk-nodejs/commit/09dc584b7f3fa8ed2f3254371f56a2add005a4f0))
+
 ## 5.23.0 - 2026-11-27
 
 ### Features
